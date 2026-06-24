@@ -1,0 +1,46 @@
+name: Daily Supabase → Snowflake ingestion
+
+# WHEN THIS RUNS:
+# - schedule: every day at 02:00 IST. GitHub cron is in UTC, and IST is UTC+5:30,
+#   so 02:00 IST == 20:30 UTC the previous day -> "30 20 * * *".
+# - workflow_dispatch: lets you trigger it manually from the Actions tab (great
+#   for testing without waiting for 2am).
+on:
+  schedule:
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+
+    # All secrets come from the repo's GitHub Secrets — never hardcoded.
+    # SNOWFLAKE_USER/PASSWORD are the SVC_ONEONONE_LOADER service account, which
+    # holds ONLY the ONEONONE_LOADER role. Non-secret values are inline.
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ONEONONE_LOADER
+      SNOWFLAKE_WAREHOUSE: ONEONONE_WH
+      SNOWFLAKE_DATABASE: ONEONONE_DB
+      SNOWFLAKE_SCHEMA: RAW
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ingestion
+        working-directory: ingestion
+        run: python ingest.py
