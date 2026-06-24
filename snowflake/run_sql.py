@@ -10,20 +10,37 @@ through (USE ROLE SYSADMIN, then USERADMIN, then SECURITYADMIN). All statements
 must run in ONE session so those role switches persist. The connector's
 `execute_string()` does exactly that — it runs a multi-statement script in a
 single session, in order.
+
+Why a BARE connection (not the ingestion helper): this script CREATES and DROPS
+the warehouse, database, and roles. It must not depend on any of them existing.
+So it connects with only account/user/password and the user's default role, and
+lets the USE ROLE / USE WAREHOUSE statements inside the .sql file drive the rest.
+That makes a teardown -> setup cycle work cleanly, no matter the current state.
 """
 
+import os
 import sys
 from pathlib import Path
 
-# Reuse the connection helper we already wrote for ingestion.
-sys.path.append(str(Path(__file__).resolve().parent.parent / "ingestion"))
-from db import get_snowflake_connection
+from dotenv import load_dotenv
+import snowflake.connector
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def get_bare_connection():
+    # No role / warehouse / database here on purpose — see module docstring.
+    return snowflake.connector.connect(
+        account=os.environ["SNOWFLAKE_ACCOUNT"],
+        user=os.environ["SNOWFLAKE_USER"],
+        password=os.environ["SNOWFLAKE_PASSWORD"],
+    )
 
 
 def run_sql_file(path: str):
     sql = Path(path).read_text()
 
-    conn = get_snowflake_connection()
+    conn = get_bare_connection()
     try:
         # execute_string returns one cursor per statement it ran.
         cursors = conn.execute_string(sql, remove_comments=False)
