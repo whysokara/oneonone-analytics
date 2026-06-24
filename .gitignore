@@ -1,3 +1,28 @@
-.venv
+# Virtual environment
+.venv/
+
+# Secrets
+.env
+.env.local
+
+# Sensitive source docs (not for version control)
 context*
 oneon*
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Claude Code internals
+.agents/
+skills-lock.json
