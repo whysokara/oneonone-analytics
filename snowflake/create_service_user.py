@@ -55,20 +55,23 @@ def main():
     )
     cur = conn.cursor()
 
-    # USERADMIN creates users (and roles). Create the service user, pin its
-    # default role/warehouse so it doesn't have to set them each run, and mark
-    # the password as not requiring a change (it's a machine account).
+    # USERADMIN creates users (and roles).
+    # We create the user WITHOUT a password, then set every property (incl. the
+    # password) in a single ALTER. Why: setting the password in both CREATE and
+    # a follow-up ALTER assigns the SAME value twice, and Snowflake's password
+    # policy rejects reusing the immediately prior password (error: PRIOR_USE).
+    # Setting it exactly once — and generating a fresh random password each run —
+    # keeps this idempotent whether the user is new or already exists.
     cur.execute("USE ROLE USERADMIN")
+    cur.execute(f"CREATE USER IF NOT EXISTS {SERVICE_USER}")
     cur.execute(f"""
-        CREATE USER IF NOT EXISTS {SERVICE_USER}
-            PASSWORD            = '{password}'
-            DEFAULT_ROLE        = ONEONONE_LOADER
-            DEFAULT_WAREHOUSE   = ONEONONE_WH
+        ALTER USER {SERVICE_USER} SET
+            PASSWORD             = '{password}'
+            DEFAULT_ROLE         = ONEONONE_LOADER
+            DEFAULT_WAREHOUSE    = ONEONONE_WH
             MUST_CHANGE_PASSWORD = FALSE
-            COMMENT             = 'Service account for GitHub Actions ingestion. LOADER role only.'
+            COMMENT              = 'Service account for GitHub Actions ingestion. LOADER role only.'
     """)
-    # If the user already existed, make sure the password is the new one.
-    cur.execute(f"ALTER USER {SERVICE_USER} SET PASSWORD = '{password}'")
 
     # SECURITYADMIN owns granting. Give it ONLY the loader role — least privilege.
     cur.execute("USE ROLE SECURITYADMIN")

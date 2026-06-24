@@ -1,13 +1,13 @@
 name: Daily Supabase → Snowflake ingestion
 
 # WHEN THIS RUNS:
-# - schedule: every day at 02:00 IST. GitHub cron is in UTC, and IST is UTC+5:30,
-#   so 02:00 IST == 20:30 UTC the previous day -> "30 20 * * *".
+# - schedule: every day at 11:00 IST. GitHub cron is in UTC, and IST is UTC+5:30,
+#   so 11:00 IST == 05:30 UTC -> "30 5 * * *".
 # - workflow_dispatch: lets you trigger it manually from the Actions tab (great
-#   for testing without waiting for 2am).
+#   for testing without waiting for the scheduled time).
 on:
   schedule:
-    - cron: "30 20 * * *"
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 jobs:
