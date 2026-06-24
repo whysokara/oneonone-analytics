@@ -16,8 +16,24 @@ TABLES = [
 
 def fetch_table(client, table_name: str) -> pd.DataFrame:
     print(f"[ingest] Fetching {table_name} from Supabase...")
-    result = client.table(table_name).select("*").execute()
-    df = pd.DataFrame(result.data)
+    # Supabase/PostgREST caps a single response at 1000 rows. We must paginate
+    # with .range() or tables larger than 1000 are silently truncated. Loop until
+    # a page returns fewer rows than the page size, meaning we've hit the end.
+    page_size = 1000
+    offset = 0
+    all_rows = []
+    while True:
+        result = (
+            client.table(table_name)
+            .select("*")
+            .range(offset, offset + page_size - 1)  # .range() is inclusive on both ends
+            .execute()
+        )
+        all_rows.extend(result.data)
+        if len(result.data) < page_size:
+            break  # short page = last page
+        offset += page_size
+    df = pd.DataFrame(all_rows)
     print(f"[ingest] {table_name}: {len(df)} rows fetched")
     return df
 
