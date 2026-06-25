@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: supabase
+    database: ONEONONE_DB
+    schema: RAW
+    tables:
+      - name: users
+      - name: boards
+      - name: memberships
+      - name: entries
+      - name: announcements
+      - name: announcement_reactions
+      - name: subscriptions
+      - name: support_requests
+      - name: usage_events

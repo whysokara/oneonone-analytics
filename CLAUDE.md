@@ -236,7 +236,7 @@ select * from final
 - One staging model per source table, no exceptions
 - Only allowed operations: rename columns, cast types, basic null coalescing
 - No joins in staging — always 1:1 with source table
-- Always cast timestamps to `TIMESTAMP_NTZ` (Supabase sends UTC)
+- Always cast timestamps to `TIMESTAMP_TZ` (preserves the UTC offset from Supabase's `timestamptz`)
 - Add `_dbt_loaded_at` using `current_timestamp()` for auditability
 - Use `{{ source('supabase', 'table') }}` — never hardcode table names
 
@@ -249,8 +249,8 @@ renamed as (
         id::varchar                as user_id,
         email::varchar             as email,
         role::varchar              as user_role,
-        "createdAt"::timestamp_ntz as created_at,
-        "updatedAt"::timestamp_ntz as updated_at,
+        "createdAt"::timestamp_tz  as created_at,
+        "updatedAt"::timestamp_tz  as updated_at,
         current_timestamp()        as _dbt_loaded_at
     from source
 )
@@ -338,7 +338,7 @@ columns:
 
 ## Snowflake-Specific Rules
 
-- Always `TIMESTAMP_NTZ` for timestamps — never `TIMESTAMP_TZ` or `TIMESTAMP_LTZ`
+- Always `TIMESTAMP_TZ` for timestamps — preserves the source UTC offset (avoid `TIMESTAMP_NTZ`/`TIMESTAMP_LTZ`, which lose or remap it)
 - Use `VARCHAR` not `STRING`
 - Use `NUMBER(18,2)` for monetary amounts
 - Never `SELECT *` in production models — always explicit columns
