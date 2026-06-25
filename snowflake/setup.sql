@@ -38,7 +38,7 @@ CREATE WAREHOUSE IF NOT EXISTS ONEONONE_WH
 
 -- A database is a logical container. Inside it we use one SCHEMA per pipeline
 -- LAYER — this is the standard analytics-engineering layout. Data flows left to
--- right: RAW (untouched landing) -> STAGING (cleaned) -> MARTS (business logic).
+-- right: RAW (landing) -> STAGING (cleaned) -> INTERMEDIATE (reusable glue) -> MARTS.
 CREATE DATABASE IF NOT EXISTS ONEONONE_DB
     COMMENT = 'OneOnOne analytics warehouse';
 
@@ -48,6 +48,8 @@ CREATE SCHEMA IF NOT EXISTS RAW
     COMMENT = 'Landing zone. Python ingestion writes here. All columns VARCHAR, untyped.';
 CREATE SCHEMA IF NOT EXISTS STAGING
     COMMENT = 'dbt staging models (views). Typed, renamed, snake_case. No business logic.';
+CREATE SCHEMA IF NOT EXISTS INTERMEDIATE
+    COMMENT = 'dbt intermediate models (views). Reusable joins/derivations shared across marts.';
 CREATE SCHEMA IF NOT EXISTS MARTS
     COMMENT = 'dbt marts (tables). Business logic: dims, facts, health marts.';
 
@@ -119,11 +121,13 @@ GRANT SELECT ON ALL TABLES    IN SCHEMA ONEONONE_DB.RAW TO ROLE ONEONONE_TRANSFO
 -- objects that don't exist yet. This is the #1 thing people forget.
 GRANT SELECT ON FUTURE TABLES IN SCHEMA ONEONONE_DB.RAW TO ROLE ONEONONE_TRANSFORMER;
 
--- dbt needs to create both views (staging) and tables (marts) in these schemas.
+-- dbt needs to create both views (staging/intermediate) and tables (marts) here.
 GRANT USAGE, CREATE TABLE, CREATE VIEW
-    ON SCHEMA ONEONONE_DB.STAGING TO ROLE ONEONONE_TRANSFORMER;
+    ON SCHEMA ONEONONE_DB.STAGING      TO ROLE ONEONONE_TRANSFORMER;
 GRANT USAGE, CREATE TABLE, CREATE VIEW
-    ON SCHEMA ONEONONE_DB.MARTS   TO ROLE ONEONONE_TRANSFORMER;
+    ON SCHEMA ONEONONE_DB.INTERMEDIATE TO ROLE ONEONONE_TRANSFORMER;
+GRANT USAGE, CREATE TABLE, CREATE VIEW
+    ON SCHEMA ONEONONE_DB.MARTS        TO ROLE ONEONONE_TRANSFORMER;
 
 -- 3f. REPORTER — read-only on MARTS, the curated end product.
 -- The AI analyst and any BI tool query here. They can never see RAW or STAGING,

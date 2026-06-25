@@ -1,0 +1,186 @@
+version: 2
+
+models:
+  - name: dim_managers
+    description: >
+      One row per manager (users with role='manager'), enriched with plan/MRR status,
+      team size, activation, and entry activity. Built on the intermediate layer.
+    columns:
+      - name: manager_id
+        description: Primary key — the manager's user_id.
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_users')
+                field: user_id
+      - name: email
+        description: Manager's email.
+      - name: signup_date
+        description: Date the manager's user record was created.
+      - name: current_plan
+        description: Plan on the manager's current subscription; 'free' if none.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [free, pro, pro_plus]
+      - name: is_paying
+        description: True when the current subscription is active, non-complimentary, and on a paid plan.
+        tests: [not_null]
+      - name: team_size
+        description: Distinct team members across the manager's boards, excluding the manager.
+        tests: [not_null]
+      - name: is_activated
+        description: True when at least one team member has at least one published entry.
+        tests: [not_null]
+      - name: last_entry_at
+        description: Most recent entry_date among the manager's team entries (excludes self-entries).
+      - name: entry_count
+        description: Count of team entries on the manager's boards (excludes self-entries).
+        tests: [not_null]
+
+  - name: dim_teams
+    description: One row per board (team), with team size and the manager's current plan.
+    columns:
+      - name: board_id
+        description: Primary key — the board id.
+        tests: [unique, not_null]
+      - name: manager_id
+        description: The board's manager.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_managers')
+                field: manager_id
+      - name: team_name
+        description: Board name.
+      - name: created_date
+        description: Date the board was created.
+      - name: team_size
+        description: Members on the board, excluding the manager.
+        tests: [not_null]
+      - name: manager_plan
+        description: The manager's current plan; 'free' if none.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [free, pro, pro_plus]
+
+  - name: fct_entries
+    description: One row per entry — business-facing fact with self-entry and first-entry flags.
+    columns:
+      - name: entry_id
+        description: Primary key — the entry id.
+        tests: [unique, not_null]
+      - name: board_id
+        description: Board the entry belongs to.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_teams')
+                field: board_id
+      - name: employee_id
+        description: User the entry is about.
+      - name: manager_id
+        description: Manager of the entry's board.
+      - name: category
+        description: Entry category.
+      - name: status
+        description: Entry lifecycle status.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [draft, pending_approval, published]
+      - name: visibility
+        description: Entry visibility.
+        tests:
+          - accepted_values:
+              arguments:
+                values: [shared, manager_private]
+      - name: is_self_entry
+        description: True when the manager logged their own work.
+        tests: [not_null]
+      - name: is_first_entry
+        description: True for an employee's earliest published entry.
+        tests: [not_null]
+      - name: entry_date
+        description: Date the work happened (business date).
+
+  - name: fct_subscriptions
+    description: >
+      One row per subscription record (full history). Adds per-row MRR contribution and a
+      transition_type derived from the prior row per user.
+    columns:
+      - name: subscription_id
+        description: Primary key — the subscription record id.
+        tests: [unique, not_null]
+      - name: user_id
+        description: Subscriber (the manager paying).
+        tests: [not_null]
+      - name: plan
+        description: Plan on this subscription record.
+        tests:
+          - accepted_values:
+              arguments:
+                values: [free, pro, pro_plus]
+      - name: status
+        description: Subscription status.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [active, canceled, past_due, expired, complimentary]
+      - name: is_complimentary
+        description: True for complimentary subscriptions ($0 MRR).
+      - name: current_period_end
+        description: End of the current billing period.
+      - name: mrr_amount
+        description: Monthly recurring revenue this row contributes (active, non-complimentary, paid plan only).
+        tests: [not_null]
+      - name: transition_type
+        description: Change vs the user's prior subscription row.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [new, upgrade, downgrade, churn, unchanged]
+
+  - name: mart_manager_health
+    description: >
+      One row per manager, snapshot (recomputed each run). Churn early-warning with raw
+      activity components and a derived health_status verdict.
+    columns:
+      - name: manager_id
+        description: Primary key — the manager.
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_managers')
+                field: manager_id
+      - name: last_entry_at
+        description: Most recent team entry_date.
+      - name: entries_30d
+        description: Non-self team entries in the trailing 30 days.
+        tests: [not_null]
+      - name: team_size
+        description: Members on the manager's boards, excluding the manager.
+        tests: [not_null]
+      - name: current_plan
+        description: Manager's current plan.
+      - name: days_since_last_entry
+        description: Days between the last team entry and today; null if no entries.
+      - name: health_status
+        description: Derived verdict from recency of activity.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [healthy, at_risk, churning]

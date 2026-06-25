@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: int_entries_enriched
+    description: >
+      One row per entry, enriched with the entry's board manager and two business-rule
+      flags: is_self_entry (manager logging their own work) and is_first_entry (an
+      employee's earliest published entry). Reused by fct_entries, dim_managers,
+      mart_manager_health.
+    columns:
+      - name: entry_id
+        description: Primary key — one row per entry.
+        tests: [unique, not_null]
+      - name: is_self_entry
+        tests: [not_null]
+      - name: is_first_entry
+        tests: [not_null]
+
+  - name: int_board_team_size
+    description: >
+      One row per board with team_size = count of members excluding the board's manager.
+      Boards with no reportees are 0. Reused by dim_teams, dim_managers, mart_manager_health.
+    columns:
+      - name: board_id
+        description: Primary key — one row per board.
+        tests: [unique, not_null]
+      - name: team_size
+        tests: [not_null]
+
+  - name: int_subscriptions_current
+    description: >
+      One row per user — their current subscription (active preferred, else most recent),
+      with current_plan, is_active, is_paying, and mrr_amount (active & non-complimentary &
+      paid plan only). Reused by dim_managers, dim_teams, mart_manager_health.
+    columns:
+      - name: user_id
+        description: Primary key — one row per user.
+        tests: [unique, not_null]
+      - name: is_paying
+        tests: [not_null]
+      - name: mrr_amount
+        tests: [not_null]
