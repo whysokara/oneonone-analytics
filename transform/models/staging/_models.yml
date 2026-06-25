@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: stg_users
+    columns:
+      - name: user_id
+        tests: [unique, not_null]
+      - name: role
+        tests:
+          - accepted_values:
+              arguments:
+                values: [manager, reportee]
+
+  - name: stg_boards
+    columns:
+      - name: board_id
+        tests: [unique, not_null]
+
+  - name: stg_memberships
+    columns:
+      - name: membership_id
+        tests: [unique, not_null]
+
+  - name: stg_entries
+    columns:
+      - name: entry_id
+        tests: [unique, not_null]
+      - name: visibility
+        tests:
+          - accepted_values:
+              arguments:
+                values: [shared, manager_private]
+
+  - name: stg_announcements
+    columns:
+      - name: announcement_id
+        tests: [unique, not_null]
+
+  - name: stg_announcement_reactions
+    columns:
+      - name: reaction_id
+        tests: [unique, not_null]
+      - name: reaction
+        tests:
+          - accepted_values:
+              arguments:
+                values: [thumbs_up, heart, tada, eyes]
+
+  - name: stg_subscriptions
+    columns:
+      - name: subscription_id
+        tests: [unique, not_null]
+      - name: plan
+        tests:
+          - accepted_values:
+              arguments:
+                values: [free, pro, pro_plus]
+      - name: status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [active, canceled, past_due, expired, complimentary]
+
+  - name: stg_support_requests
+    columns:
+      - name: support_request_id
+        tests: [unique, not_null]
+
+  - name: stg_usage_events
+    columns:
+      - name: usage_event_id
+        tests: [unique, not_null]
