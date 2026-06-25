@@ -11,7 +11,7 @@ Legend: 🔴 correctness · 🟡 robustness/scale · 🟢 observability/ops · �
 ### 🔴 Tier 1 — Correctness
 1. ✅ **Supabase 1000-row pagination** — `fetch_table` was truncating `entries` (1863 → 1000). Fixed via `.range()` pagination on 2026-06-25. See ISSUES_LOG #10.
 2. ⬜ **Job lies on partial failure.** `ingest.py` wraps each table in `try/except` that prints and continues, then exits `0`. If one table fails, GitHub Actions still shows green. → Track failures, exit non-zero if any table failed.
-3. ⬜ **No atomicity.** `DROP → CREATE → INSERT` means a mid-run crash leaves a table empty/half-loaded. → Load into a temp table, then atomic swap (or wrap in a transaction).
+3. ✅ **No atomicity.** `DROP → CREATE → INSERT` left a table empty/half-loaded on a mid-run crash. Fixed 2026-06-26: `load_table` now loads into a `<table>__load` side table, then `ALTER TABLE ... SWAP WITH` (single atomic op), then drops the load table. The live table only ever changes via the swap, which runs only after a full load. (A transaction can't help — Snowflake DDL auto-commits.)
 
 ### 🟡 Tier 2 — Robustness & scale
 4. ⬜ **Incremental loading** (deliberately deferred). Full-refresh every run; fine at 1k rows, needed at scale. Use `updated_at` watermark per the per-table strategy in CLAUDE.md.

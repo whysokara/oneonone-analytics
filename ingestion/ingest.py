@@ -45,24 +45,39 @@ def load_table(conn, table_name: str, df: pd.DataFrame):
 
     cursor = conn.cursor()
 
+    # Atomic full refresh via load-then-swap. We never touch the live table until the
+    # new data is fully built in a side table, then replace it with a single atomic
+    # ALTER TABLE ... SWAP. A crash before the swap leaves the live table holding the
+    # previous run's complete data — never empty or half-loaded.
+    # (A transaction would NOT help: Snowflake DDL auto-commits and can't be rolled back.)
+    load_table_name = f"{table_name}__load"
+
     # Build column list from dataframe — quote names to preserve case in Snowflake
     columns = ", ".join([f'"{col}"' for col in df.columns.tolist()])
     placeholders = ", ".join(["%s"] * len(df.columns))
 
-    # Drop and recreate table for full refresh
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-    cursor.execute(f"""
-        CREATE TABLE {table_name} (
-            {", ".join([f'"{col}" VARCHAR' for col in df.columns])}
-        )
-    """)
+    # Table names stay unquoted (Snowflake folds them to uppercase) to match the existing
+    # convention; only column names are quoted to preserve their source casing (see ISSUES_LOG #3).
+    column_ddl = ", ".join([f'"{col}" VARCHAR' for col in df.columns])
 
-    # Insert rows
+    # 1. Build the new data off to the side. Live table untouched.
+    cursor.execute(f"CREATE OR REPLACE TABLE {load_table_name} ({column_ddl})")
+
+    # 2. Fill the side table. If this raises, we stop here and the live table is intact.
     rows = [tuple(str(v) if v is not None else None for v in row) for row in df.itertuples(index=False)]
     cursor.executemany(
-        f'INSERT INTO {table_name} ({columns}) VALUES ({placeholders})',
+        f'INSERT INTO {load_table_name} ({columns}) VALUES ({placeholders})',
         rows
     )
+
+    # 3. Ensure the live table exists so SWAP has a counterpart (no-op after first run).
+    cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} LIKE {load_table_name}")
+
+    # 4. The one atomic moment: live table now holds the new data; load table holds the old.
+    cursor.execute(f"ALTER TABLE {table_name} SWAP WITH {load_table_name}")
+
+    # 5. Discard the old data.
+    cursor.execute(f"DROP TABLE IF EXISTS {load_table_name}")
 
     print(f"[ingest] {table_name}: {len(df)} rows loaded into Snowflake")
     cursor.close()
