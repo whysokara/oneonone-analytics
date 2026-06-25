@@ -10,7 +10,8 @@ renamed as (
         "title"                   as title,
         "message"                 as message,
         "createdAt"::timestamp_tz as created_at,
-        "updatedAt"::timestamp_tz as updated_at
+        "updatedAt"::timestamp_tz as updated_at,
+        current_timestamp()       as _dbt_loaded_at
     from source
 )
 

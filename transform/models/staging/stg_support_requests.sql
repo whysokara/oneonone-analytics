@@ -8,7 +8,8 @@ renamed as (
         "userId"                  as user_id,
         "type"                    as request_type,
         "message"                 as message,
-        "createdAt"::timestamp_tz as created_at
+        "createdAt"::timestamp_tz as created_at,
+        current_timestamp()       as _dbt_loaded_at
     from source
 )
 

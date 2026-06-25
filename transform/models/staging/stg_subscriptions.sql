@@ -14,7 +14,8 @@ renamed as (
         "current_period_end"::timestamp_tz as current_period_end,
         "is_complimentary"::boolean        as is_complimentary,
         "created_at"::timestamp_tz         as created_at,
-        "updated_at"::timestamp_tz         as updated_at
+        "updated_at"::timestamp_tz         as updated_at,
+        current_timestamp()                as _dbt_loaded_at
     from source
 )
 

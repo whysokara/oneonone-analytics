@@ -8,7 +8,8 @@ renamed as (
         "announcementId"          as announcement_id,
         "userId"                  as user_id,
         "reaction"                as reaction,
-        "createdAt"::timestamp_tz as created_at
+        "createdAt"::timestamp_tz as created_at,
+        current_timestamp()       as _dbt_loaded_at
     from source
 )
 
