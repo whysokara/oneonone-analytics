@@ -6,6 +6,13 @@ Format per entry: **Symptom → Root cause → Fix → Lesson.**
 
 ---
 
+## #11 — Three source columns missing from staging
+**Date:** 2026-06-26 · **Area:** dbt / staging
+- **Symptom:** Comparing the Supabase ERD against our `stg_` models (while planning Week 3) revealed three source columns absent from staging: `entries.goalTag`, `entries.managerNote`, and `boards.reviewDate`. Anything built on staging would silently never see them.
+- **Root cause:** Ingestion lands every column in RAW (it uses `select *` + a schema generated dynamically from the dataframe), so RAW was complete. But staging models list columns **explicitly** (correct per our no-`select *` rule) — and those lists were written before the full ERD was on hand, so three columns were never carried through.
+- **Fix:** Added `"goalTag" as goal_tag`, `"managerNote" as manager_note` to `stg_entries` and `"reviewDate" as review_date` to `stg_boards`. No re-ingest needed — the data was already in RAW. `dbt run --select stg_entries stg_boards` → PASS=2.
+- **Lesson:** RAW is self-healing on schema (dynamic `select *`), but staging is only as complete as its explicit column list. Diff staging against the source schema whenever the source changes — RAW being correct does not mean staging is.
+
 ## #10 — Supabase silently truncated `entries` to 1000 rows
 **Date:** 2026-06-25 · **Area:** Ingestion
 - **Symptom:** Ingestion reported `entries: 1000 rows` — suspiciously round. An exact-count check showed Supabase actually had **1,863** rows; we were loading only 1,000 (46% data loss on the core fact table). Every other table was under 1000 and unaffected.
