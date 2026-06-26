@@ -32,6 +32,22 @@ def rand_past_date(max_days=180):
 def invite_code():
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
+def today_ts():
+    return datetime.now(timezone.utc).isoformat()
+
+def today_date():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+def stamp_today(rows, ts_field=None, date_field=None):
+    """Set today's date on the first row so every run is trackable by date."""
+    if not rows:
+        return rows
+    if ts_field:
+        rows[0][ts_field] = today_ts()
+    if date_field:
+        rows[0][date_field] = today_date()
+    return rows
+
 def pick(options, weights):
     return random.choices(options, weights=weights, k=1)[0]
 
@@ -457,17 +473,19 @@ def run():
     counts = {}
 
     # 1. Managers (creates auth users + public profiles)
-    managers = gen_managers(client, random.randint(2, 4))
+    managers = stamp_today(gen_managers(client, random.randint(2, 4)), ts_field="createdAt")
     counts["users (managers)"] = insert(client, "users", managers)
 
     # 2. Boards (depends on managers)
-    boards = gen_boards(managers)
+    boards = stamp_today(gen_boards(managers), ts_field="createdAt")
     counts["boards"] = insert(client, "boards", boards)
 
     managers_by_board = {b["id"]: b["managerId"] for b in boards}
 
     # 3. Reportees + memberships (depends on boards)
     reportees, memberships = gen_reportees_and_memberships(client, boards)
+    stamp_today(reportees, ts_field="createdAt")
+    stamp_today(memberships, ts_field="joinedAt")
     counts["users (reportees)"] = insert(client, "users", reportees)
     counts["memberships"] = insert(client, "memberships", memberships)
 
@@ -476,24 +494,25 @@ def run():
         memberships_by_board.setdefault(m["boardId"], []).append(m["userId"])
 
     # 4. Subscriptions (depends on managers)
-    subs = gen_subscriptions(managers)
+    subs = stamp_today(gen_subscriptions(managers), ts_field="created_at")
     counts["subscriptions"] = insert(client, "subscriptions", subs)
 
     # 5. Entries (depends on boards + members)
-    entries = gen_entries(boards, memberships_by_board, managers_by_board)
+    # stamp entryDate (the business date MetricFlow uses) so metrics show today's activity
+    entries = stamp_today(gen_entries(boards, memberships_by_board, managers_by_board), date_field="entryDate")
     counts["entries"] = insert(client, "entries", entries)
 
     # 6. Announcements (depends on boards + managers)
-    announcements = gen_announcements(boards, managers_by_board)
+    announcements = stamp_today(gen_announcements(boards, managers_by_board), ts_field="createdAt")
     counts["announcements"] = insert(client, "announcements", announcements)
 
     # 7. Support requests
     all_user_ids = [u["id"] for u in managers + reportees]
-    support = gen_support_requests(all_user_ids)
+    support = stamp_today(gen_support_requests(all_user_ids), ts_field="createdAt")
     counts["support_requests"] = insert(client, "support_requests", support)
 
     # 8. Usage events
-    usage = gen_usage_events(all_user_ids)
+    usage = stamp_today(gen_usage_events(all_user_ids), ts_field="created_at")
     counts["usage_events"] = insert(client, "usage_events", usage)
 
     print("\nSeed run complete:")
