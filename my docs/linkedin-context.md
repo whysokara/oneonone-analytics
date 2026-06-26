@@ -83,6 +83,22 @@ Learning notes saved in `learning/topics/` — one file per topic, with deep con
 
 ---
 
+## Roadmap — What's Coming Next (Future Plans)
+
+These are **not yet built**. They are planned weeks in the 8-week pipeline build. Mention them as "next" or "coming soon" in content — never as shipped.
+
+| Week | Deliverable | Status |
+|---|---|---|
+| Week 5 | **LangGraph AI analyst agent** — 4 tools (`get_metric`, `list_available_metrics`, `compare_periods`, `get_trend`), per-manager scoping, 12/15 test questions correct | 🔜 Next |
+| Week 6 | **Reliability layer** — 20-question eval set, confidence handling ("I don't have a metric for that yet"), sanity checks (MRR can't be negative), citation format on every answer | 🔜 Planned |
+| Week 7 | **In-app chat** — `/api/analyst` route in the OneOnOne Next.js app, collapsible dashboard panel, manager-scoped answers | 🔜 Planned |
+| Week 8 | **Ship & document** — README, Loom demo walkthrough, blog post, resume bullet | 🔜 Planned |
+
+### Why the order matters (content angle)
+The semantic layer (Week 4) had to be built *before* the agent (Week 5) — the agent will call `mf query` under the hood. Metrics need a trusted definition before an AI can cite them. This sequencing (data → semantics → AI) is intentional and different from most "AI on data" projects that skip the semantic layer.
+
+---
+
 ## The Project GitHub
 
 Repository: `whysokara/oneonone-analytics`  
