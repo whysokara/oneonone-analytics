@@ -39,11 +39,17 @@ def today_date():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 def stamp_today(rows, ts_field=None, date_field=None):
-    """Set today's date on the first row so every run is trackable by date."""
+    """Set today's date on the first row so every run is trackable by date.
+    Also updates the paired updatedAt/updated_at so it never predates createdAt."""
     if not rows:
         return rows
+    ts = today_ts()
     if ts_field:
-        rows[0][ts_field] = today_ts()
+        rows[0][ts_field] = ts
+        # keep the updated sibling in sync — it can't be before created
+        updated_sibling = "updatedAt" if ts_field == "createdAt" else "updated_at"
+        if updated_sibling in rows[0]:
+            rows[0][updated_sibling] = ts
     if date_field:
         rows[0][date_field] = today_date()
     return rows
