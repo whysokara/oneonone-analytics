@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: metricflow_time_spine
+    description: "Calendar table — one row per day. Required by MetricFlow to fill time-series gaps."
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: "One calendar day."
+        granularity: day
+        tests: [unique, not_null]

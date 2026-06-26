@@ -7,3 +7,6 @@ python-dotenv>=1.0.0
 # --- dbt + Snowflake adapter ---
 # dbt-snowflake pulls in dbt-core automatically
 dbt-snowflake>=1.9.0
+
+# --- MetricFlow (semantic layer + mf CLI) ---
+dbt-metricflow[snowflake]>=0.13.0

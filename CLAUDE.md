@@ -80,8 +80,12 @@ dbt build                                    # run + test together
 dbt build --select stg_entries               # single model
 
 # MetricFlow
-mf query --metrics mrr --group-by metric_time__month
-mf query --metrics active_managers --group-by metric_time__week
+# IMPORTANT: always prefix mf commands with DBT_PROFILES_DIR=~/.dbt
+# (dbt-metricflow 0.13.0 + dbt-core 1.11 version mismatch — mf can't find profiles without it)
+DBT_PROFILES_DIR=~/.dbt mf health-checks
+DBT_PROFILES_DIR=~/.dbt mf query --metrics mrr --group-by metric_time__month
+DBT_PROFILES_DIR=~/.dbt mf query --metrics active_managers --group-by metric_time__week
+DBT_PROFILES_DIR=~/.dbt mf validate-configs
 
 # Agent eval
 python eval/run_eval.py                      # scores agent against 20 known-answer questions

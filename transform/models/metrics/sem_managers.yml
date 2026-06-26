@@ -1,0 +1,125 @@
+version: 2
+
+semantic_models:
+  - name: managers
+    description: >
+      Semantic model on dim_managers. One row per manager. Declares the manager entity,
+      signup_date time dimension, plan/activation dimensions, and measures that power
+      manager-count, team-size, and conversion metrics.
+    model: ref('dim_managers')
+
+    entities:
+      - name: manager
+        type: primary
+        expr: manager_id
+
+    dimensions:
+      - name: signup_date
+        type: time
+        type_params:
+          time_granularity: day
+
+      - name: current_plan
+        type: categorical
+        description: "Manager's current subscription plan (free, pro, pro_plus)."
+
+      - name: is_paying
+        type: categorical
+        description: "True when the manager has an active, non-complimentary paid plan."
+
+      - name: is_activated
+        type: categorical
+        description: "True when at least one team member has at least one published entry."
+
+    measures:
+      - name: manager_count
+        description: "Distinct count of managers."
+        agg: count_distinct
+        expr: manager_id
+        agg_time_dimension: signup_date
+
+      # CASE in expr avoids Jinja templating — safe for dbt to parse.
+      # dim_managers is one row per manager so sum(case...) = count of matching managers.
+      - name: activated_manager_count
+        description: "Count of managers who have activated (≥1 team published entry)."
+        agg: sum
+        expr: "case when is_activated = true then 1 else 0 end"
+        agg_time_dimension: signup_date
+
+      - name: paying_manager_count
+        description: "Count of managers on an active paid plan."
+        agg: sum
+        expr: "case when is_paying = true then 1 else 0 end"
+        agg_time_dimension: signup_date
+
+      - name: total_team_size
+        description: "Sum of team_size across all managers. Used to compute avg_team_size."
+        agg: sum
+        expr: team_size
+        agg_time_dimension: signup_date
+
+metrics:
+  # ── Simple metrics (base layer — directly aggregate one measure) ──────────
+
+  - name: total_managers
+    label: Total Managers
+    description: "Total number of manager accounts ever created."
+    type: simple
+    type_params:
+      measure: manager_count
+
+  - name: new_managers_mtd
+    label: New Managers (Month to Date)
+    description: "Cumulative count of managers who signed up in the current calendar month."
+    type: cumulative
+    type_params:
+      measure: manager_count
+      cumulative_type_params:
+        grain_to_date: month
+
+  - name: active_managers
+    label: Active Managers
+    description: "Managers who have activated — at least one team member has a published entry."
+    type: simple
+    type_params:
+      measure: activated_manager_count
+
+  # Helper metric — used as the numerator in conversion_rate ratio below.
+  - name: paying_managers
+    label: Paying Managers
+    description: "Count of managers on an active paid plan. Numerator for conversion_rate."
+    type: simple
+    type_params:
+      measure: paying_manager_count
+
+  # Helper metric — used as the numerator in avg_team_size derived metric below.
+  - name: total_team_size_metric
+    label: Total Team Size
+    description: "Sum of team sizes across all managers. Numerator for avg_team_size."
+    type: simple
+    type_params:
+      measure: total_team_size
+
+  # ── Derived / Ratio metrics (reference the simple metrics above) ──────────
+
+  - name: avg_team_size
+    label: Average Team Size
+    description: "Average number of team members per manager (excluding the manager themselves)."
+    type: derived
+    type_params:
+      expr: "total_team_size / manager_count"
+      metrics:
+        - name: total_team_size_metric
+          alias: total_team_size
+        - name: total_managers
+          alias: manager_count
+
+  - name: conversion_rate
+    label: Conversion Rate
+    description: "Share of managers on a paid plan (active, non-complimentary)."
+    type: ratio
+    type_params:
+      numerator:
+        name: paying_managers
+      denominator:
+        name: total_managers
