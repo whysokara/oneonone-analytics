@@ -7,6 +7,13 @@ Format per entry: **Symptom → Root cause → Fix → Lesson.**
 
 ---
 
+## #11 — MRR built on placeholder prices (and annual not normalized)
+**Date:** 2026-06-26 · **Area:** dbt / Modeling
+- **Symptom:** `int_subscriptions_current.mrr_amount` (feeding `fct_subscriptions`, `dim_managers.is_paying`, and the upcoming Week 4 `mrr` metric) used hardcoded guesses — pro=$29, pro_plus=$99 — and applied them flat to every active sub regardless of billing cycle.
+- **Root cause:** The source `subscriptions` table carries `plan` and `billing_cycle` but **no price/amount column** (it references the payment provider by `dodo_*` id only). Price is a product fact that lives on the landing page / in Dodo, not in the transactional row — so the model invented numbers. It also treated annual subs as if they paid the monthly price every month, overstating their MRR.
+- **Fix:** Added a `plan_pricing` seed (real prices from the landing page: free $0, pro $10/mo, pro_plus $15/mo; annual totals $100 / $150 reflecting 2 free months). `int_subscriptions_current` now joins the seed and normalizes annual subs to a monthly figure (`annual_price / 12`). Verified total MRR = **$85.83** across live subs; canceled and complimentary correctly contribute $0.
+- **Lesson:** A column existing in a mart doesn't mean its values are real — trace every business number back to a source. Pricing is reference data: keep it in a seed (one source of truth), never hardcoded in SQL. And MRR must normalize annual contracts to monthly (`annual ÷ 12`), which is *not* the same as the monthly-billing price when annual includes free months.
+
 ## #10 — Supabase silently truncated `entries` to 1000 rows
 **Date:** 2026-06-25 · **Area:** Ingestion
 - **Symptom:** Ingestion reported `entries: 1000 rows` — suspiciously round. An exact-count check showed Supabase actually had **1,863** rows; we were loading only 1,000 (46% data loss on the core fact table). Every other table was under 1000 and unaffected.

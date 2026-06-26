@@ -6,6 +6,10 @@ with subscriptions as (
     select * from {{ ref('stg_subscriptions') }}
 ),
 
+plan_pricing as (
+    select * from {{ ref('plan_pricing') }}
+),
+
 -- collapse to one row per user: prefer an active sub, then the latest period end,
 -- then the most recently updated row (fallback when no active sub exists)
 current_subscription as (
@@ -29,6 +33,16 @@ current_subscription as (
     ) = 1
 ),
 
+priced as (
+    select
+        current_subscription.*
+        , plan_pricing.monthly_price
+        , plan_pricing.annual_price
+    from current_subscription
+    left join plan_pricing
+        on current_subscription.plan = plan_pricing.plan
+),
+
 final as (
     select
         user_id
@@ -42,18 +56,18 @@ final as (
         -- paying = active, non-complimentary, AND on a paid plan (free = $0 MRR per business rule)
         , (status = 'active' and is_complimentary = false and plan in ('pro', 'pro_plus')) as is_paying
         -- MRR rule (CLAUDE.md): only active AND non-complimentary subs contribute.
-        -- NOTE: plan prices are PLACEHOLDERS — confirm real monthly prices, and whether
-        --       an annual billing_cycle should be normalised (/12) into a monthly figure.
+        -- Prices come from the plan_pricing seed (OneOnOne landing page). Annual subs are
+        -- normalised to a monthly figure (annual_price / 12); annual /= monthly * 12 because
+        -- paid plans include 2 free months when billed yearly.
         , case
             when status = 'active' and is_complimentary = false then
-                case plan
-                    when 'pro' then 29.00
-                    when 'pro_plus' then 99.00
-                    else 0.00
+                case
+                    when billing_cycle = 'annual' then annual_price / 12.0
+                    else monthly_price
                 end
             else 0.00
           end::number(18, 2) as mrr_amount
-    from current_subscription
+    from priced
 )
 
 select * from final

@@ -24,3 +24,12 @@ models:
     marts:
       +materialized: table
       +schema: marts
+
+seeds:
+  oneonone:
+    +schema: staging
+    plan_pricing:
+      +column_types:
+        plan: varchar
+        monthly_price: number(18,2)
+        annual_price: number(18,2)

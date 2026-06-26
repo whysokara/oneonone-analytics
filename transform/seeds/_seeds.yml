@@ -1,0 +1,25 @@
+version: 2
+
+seeds:
+  - name: plan_pricing
+    description: >
+      Reference pricing per plan, sourced from the OneOnOne landing page
+      (one-on-one-alpha.vercel.app). monthly_price is the price for a monthly-billed
+      subscription; annual_price is the full amount charged per year for an annual-billed
+      subscription (Pro/Pro+ get 2 months free, so annual_price != monthly_price * 12).
+      Normalized monthly MRR for annual subs is annual_price / 12.
+    columns:
+      - name: plan
+        description: Plan identifier — matches subscriptions.plan.
+        tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [free, pro, pro_plus]
+      - name: monthly_price
+        description: Monthly price (USD) for a monthly-billed subscription. Free = 0.
+        tests: [not_null]
+      - name: annual_price
+        description: Full yearly charge (USD) for an annual-billed subscription. Free = 0.
+        tests: [not_null]
