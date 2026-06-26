@@ -6,7 +6,7 @@ This document gives an LLM full context about who I am, what I've built, and wha
 
 ## Who I Am
 
-**Name:** Kara (imhkara@gmail.com)  
+**Name:** Kara (kara_himanshu@yahoo.com)  
 **Stage:** Learning data engineering fundamentals while simultaneously shipping a real end-to-end portfolio project.  
 **Background:** Builder of OneOnOne — a SaaS product for manager-reportee performance tracking. I understand the product deeply (source data, business logic, pricing, activation metrics) because I built it.  
 **Goal:** Land a role as a data/analytics engineer. Build credibility and online presence on LinkedIn while learning and building in public.
