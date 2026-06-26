@@ -1,0 +1,93 @@
+version: 2
+
+semantic_models:
+  - name: subscriptions
+    description: >
+      Semantic model on fct_subscriptions. One row per subscription event (full history).
+      mrr_amount is already calculated in the mart (0 for inactive/complimentary rows),
+      so summing it gives correct MRR without additional filtering. Powers mrr and churn_rate.
+    model: ref('fct_subscriptions')
+
+    entities:
+      - name: subscription
+        type: primary
+        expr: subscription_id
+
+      - name: manager
+        type: foreign
+        expr: user_id
+
+    dimensions:
+      - name: current_period_end
+        type: time
+        type_params:
+          time_granularity: day
+
+      - name: plan
+        type: categorical
+        description: "Plan on this subscription (free, pro, pro_plus)."
+
+      - name: billing_cycle
+        type: categorical
+        description: "Billing frequency (monthly, annual)."
+
+      - name: status
+        type: categorical
+        description: "Subscription status (active, canceled, expired, complimentary, past_due)."
+
+      - name: transition_type
+        type: categorical
+        description: "Change vs the user's prior subscription (new, upgrade, downgrade, churn, unchanged)."
+
+    measures:
+      - name: mrr_amount
+        description: "Monthly recurring revenue contribution. Non-zero only for active, non-complimentary paid subs."
+        agg: sum
+        expr: mrr_amount
+        agg_time_dimension: current_period_end
+
+      - name: churn_count
+        description: "Count of churn events (transition_type = 'churn')."
+        agg: sum
+        expr: "case when transition_type = 'churn' then 1 else 0 end"
+        agg_time_dimension: current_period_end
+
+      - name: new_subscription_count
+        description: "Count of new subscription events."
+        agg: sum
+        expr: "case when transition_type = 'new' then 1 else 0 end"
+        agg_time_dimension: current_period_end
+
+metrics:
+  - name: mrr
+    label: Monthly Recurring Revenue
+    description: "Sum of MRR across active, non-complimentary, paid subscriptions. Annual subs normalized to monthly (annual_price / 12)."
+    type: simple
+    type_params:
+      measure: mrr_amount
+
+  - name: new_subscriptions
+    label: New Subscriptions
+    description: "Count of new subscription sign-ups."
+    type: simple
+    type_params:
+      measure: new_subscription_count
+
+  # churn_rate = churn events / new subscriptions (cohort proxy, not exact retention rate)
+  - name: churn_rate
+    label: Churn Rate
+    description: "Ratio of churn events to new subscriptions — a directional churn signal."
+    type: ratio
+    type_params:
+      numerator:
+        name: churn_count_metric
+      denominator:
+        name: new_subscriptions
+
+  # Helper simple metric for the churn_rate ratio numerator
+  - name: churn_count_metric
+    label: Churn Events
+    description: "Count of subscription churn events. Numerator for churn_rate."
+    type: simple
+    type_params:
+      measure: churn_count

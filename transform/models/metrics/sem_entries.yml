@@ -1,0 +1,115 @@
+version: 2
+
+semantic_models:
+  - name: entries
+    description: >
+      Semantic model on fct_entries. One row per entry. Declares the entry and manager
+      entities, entry_date time dimension, and measures that power entries-per-manager,
+      team adoption, and feature adoption metrics.
+    model: ref('fct_entries')
+
+    entities:
+      - name: entry
+        type: primary
+        expr: entry_id
+
+      # Foreign entity: enables joining to the managers semantic model
+      - name: manager
+        type: foreign
+        expr: manager_id
+
+    dimensions:
+      - name: entry_date
+        type: time
+        type_params:
+          time_granularity: day
+
+      - name: category
+        type: categorical
+        description: "Entry category."
+
+      - name: status
+        type: categorical
+        description: "Entry lifecycle status (draft, pending_approval, published)."
+
+      - name: is_self_entry
+        type: categorical
+        description: "True when the manager logged their own work (exclude from team metrics)."
+
+      - name: is_first_entry
+        type: categorical
+        description: "True for an employee's earliest published entry."
+
+    measures:
+      # Team entries only (exclude self-entries per business rule)
+      - name: team_entry_count
+        description: "Count of team entries, excluding manager self-entries."
+        agg: sum
+        expr: "case when is_self_entry = false then 1 else 0 end"
+        agg_time_dimension: entry_date
+
+      - name: published_team_entry_count
+        description: "Count of published team entries (excludes self-entries and drafts)."
+        agg: sum
+        expr: "case when is_self_entry = false and status = 'published' then 1 else 0 end"
+        agg_time_dimension: entry_date
+
+      # Count of first published entries per employee — activation signal
+      - name: first_entry_count
+        description: "Count of employees who logged their first ever published entry."
+        agg: sum
+        expr: "case when is_first_entry = true and status = 'published' then 1 else 0 end"
+        agg_time_dimension: entry_date
+
+      # Total entries including self-entries — volume metric
+      - name: total_entry_count
+        description: "Total entries including self-entries."
+        agg: count_distinct
+        expr: entry_id
+        agg_time_dimension: entry_date
+
+metrics:
+  - name: team_entries
+    label: Team Entries
+    description: "Total number of team entries logged (excluding manager self-entries)."
+    type: simple
+    type_params:
+      measure: team_entry_count
+
+  - name: published_entries
+    label: Published Entries
+    description: "Total published team entries (excludes drafts and self-entries)."
+    type: simple
+    type_params:
+      measure: published_team_entry_count
+
+  - name: feature_adoption
+    label: Feature Adoption
+    description: "Count of employees who have logged their first published entry — measures how many individuals have adopted the product."
+    type: simple
+    type_params:
+      measure: first_entry_count
+
+  # entries_per_manager requires joining entries + managers semantic models.
+  # MetricFlow handles the join via the shared 'manager' entity.
+  - name: entries_per_manager
+    label: Entries per Manager
+    description: "Average number of team entries per manager (excludes self-entries)."
+    type: derived
+    type_params:
+      expr: "team_entries / total_managers"
+      metrics:
+        - name: team_entries
+        - name: total_managers
+
+  # team_adoption_rate = managers with at least one published team entry / total managers.
+  # Proxied here as published_entries / total_managers (directional signal, not exact rate).
+  - name: team_adoption_rate
+    label: Team Adoption Rate
+    description: "Published team entries per manager — a directional adoption signal."
+    type: derived
+    type_params:
+      expr: "published_entries / total_managers"
+      metrics:
+        - name: published_entries
+        - name: total_managers

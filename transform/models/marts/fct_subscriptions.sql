@@ -15,17 +15,24 @@ with subscriptions as (
     from {{ ref('stg_subscriptions') }}
 ),
 
+plan_pricing as (
+    select * from {{ ref('plan_pricing') }}
+),
+
 ranked as (
     select
         subscriptions.*
+        , plan_pricing.monthly_price
+        , plan_pricing.annual_price
         -- ordered plan tiers so we can tell upgrades from downgrades
-        , case plan
+        , case subscriptions.plan
             when 'free' then 0
             when 'pro' then 1
             when 'pro_plus' then 2
             else -1
           end as plan_rank
     from subscriptions
+    left join plan_pricing on subscriptions.plan = plan_pricing.plan
 ),
 
 with_prev as (
@@ -46,14 +53,12 @@ final as (
         , is_complimentary
         , current_period_end
         -- MRR rule: only active, non-complimentary, paid-plan rows contribute.
-        -- NOTE: prices are PLACEHOLDERS (also duplicated in int_subscriptions_current) —
-        --       a plan-pricing macro/seed is the right home once confirmed.
+        -- Prices from plan_pricing seed. Annual subs normalized to monthly (annual_price / 12).
         , case
             when status = 'active' and is_complimentary = false then
-                case plan
-                    when 'pro' then 29.00
-                    when 'pro_plus' then 99.00
-                    else 0.00
+                case
+                    when billing_cycle = 'annual' then annual_price / 12.0
+                    else monthly_price
                 end
             else 0.00
           end::number(18, 2) as mrr_amount
