@@ -1,11 +1,15 @@
 """
 Seed realistic test data into Supabase across all 9 source tables.
 Each run appends new rows — no dedup, no wipe.
-Run: python ingestion/seed_data.py
+
+Usage:
+  python ingestion/seed_data.py           # append fresh rows
+  python ingestion/seed_data.py --reset   # wipe all seed data then reseed clean
 """
 
 import random
 import string
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -19,39 +23,64 @@ def tid():
 def uid():
     return str(uuid.uuid4())
 
-def rand_past_ts(max_days=180):
-    offset = random.randint(0, max_days)
-    dt = datetime.now(timezone.utc) - timedelta(days=offset)
-    return dt.isoformat()
+def now_utc():
+    return datetime.now(timezone.utc)
 
-def rand_past_date(max_days=180):
-    offset = random.randint(0, max_days)
-    dt = datetime.now(timezone.utc) - timedelta(days=offset)
-    return dt.strftime("%Y-%m-%d")
+def _parse_ts(ts_str):
+    """Parse an ISO timestamp string to a timezone-aware datetime."""
+    dt = datetime.fromisoformat(ts_str[:26])
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+def rand_ts_after(after_ts_str, max_days_after=180):
+    """Random ISO timestamp in the window (after_ts_str, after_ts_str + max_days_after].
+    Capped at now — never produces a future timestamp."""
+    after_dt = _parse_ts(after_ts_str)
+    now = now_utc()
+    if after_dt >= now:
+        return now.isoformat()
+    latest = min(after_dt + timedelta(days=max_days_after), now)
+    delta = int((latest - after_dt).total_seconds())
+    if delta <= 0:
+        return now.isoformat()
+    return (after_dt + timedelta(seconds=random.randint(0, delta))).isoformat()
+
+def rand_date_after(after_str, max_days_after=180):
+    """Random date string (YYYY-MM-DD) after the given date/timestamp string.
+    Capped at today."""
+    after_dt = _parse_ts(after_str[:10] + "T00:00:00+00:00")
+    now = now_utc()
+    latest = min(after_dt + timedelta(days=max_days_after), now)
+    delta = (latest - after_dt).days
+    if delta <= 0:
+        return now.strftime("%Y-%m-%d")
+    return (after_dt + timedelta(days=random.randint(0, delta))).strftime("%Y-%m-%d")
+
+def today_ts():
+    return now_utc().isoformat()
+
+def today_date():
+    return now_utc().strftime("%Y-%m-%d")
 
 def invite_code():
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
-def today_ts():
-    return datetime.now(timezone.utc).isoformat()
-
-def today_date():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
 def stamp_today(rows, ts_field=None, date_field=None):
-    """Set today's date on the first row so every run is trackable by date.
-    Also updates the paired updatedAt/updated_at so it never predates createdAt."""
+    """Stamp today's date on the first row of every batch so runs are trackable.
+    When setting createdAt to today, also sets updatedAt — they can never diverge."""
     if not rows:
         return rows
     ts = today_ts()
     if ts_field:
         rows[0][ts_field] = ts
-        # keep the updated sibling in sync — it can't be before created
-        updated_sibling = "updatedAt" if ts_field == "createdAt" else "updated_at"
-        if updated_sibling in rows[0]:
-            rows[0][updated_sibling] = ts
+        sibling = "updatedAt" if ts_field == "createdAt" else "updated_at"
+        if sibling in rows[0]:
+            rows[0][sibling] = ts
     if date_field:
         rows[0][date_field] = today_date()
+        # entryDate = today means the work happened today → createdAt must be >= today
+        if date_field == "entryDate" and "createdAt" in rows[0]:
+            rows[0]["createdAt"] = ts
+            rows[0]["updatedAt"] = ts
     return rows
 
 def pick(options, weights):
@@ -99,7 +128,6 @@ BOARD_DESCRIPTIONS = [
     "Operational efficiency wins and process improvement notes.",
 ]
 
-# 2 templates per category — randomly chosen per entry
 ENTRY_TEMPLATES = {
     "achievement": [
         ("Delivered authentication module ahead of schedule",
@@ -109,13 +137,13 @@ ENTRY_TEMPLATES = {
     ],
     "impact": [
         ("Reduced API response time by 40%",
-         "Profiled and optimized the main query bottleneck in the reporting service, improving P95 latency from 800ms to 480ms."),
+         "Profiled and optimized the main query bottleneck, improving P95 latency from 800ms to 480ms."),
         ("Cut deploy pipeline time from 18 min to 7 min",
          "Parallelized test jobs and removed redundant build steps. Teams now ship faster with higher confidence."),
     ],
     "learning": [
         ("Completed Kubernetes certification course",
-         "Finished the 20-hour CKA prep course and passed all practice exams. Planning to sit the official exam next month."),
+         "Finished the 20-hour CKA prep course and passed all practice exams. Sitting the official exam next month."),
         ("Deep-dived into event-driven architecture patterns",
          "Built a proof-of-concept Kafka consumer to understand how async workflows differ from REST."),
     ],
@@ -189,7 +217,7 @@ ENTRY_TEMPLATES = {
         ("Production bug caused data inconsistency in reports",
          "A race condition in the aggregation job resulted in incorrect numbers for two customers. Hotfix deployed."),
         ("Deployment pipeline flaky — blocking two teams",
-         "The CI pipeline has been intermittently failing for five days. Three teams are affected. Root cause still under investigation."),
+         "The CI pipeline has been intermittently failing for five days. Three teams are affected. Root cause under investigation."),
     ],
 }
 
@@ -251,8 +279,6 @@ CERT_URLS = [
 # ── generators ────────────────────────────────────────────────────────────────
 
 def create_auth_user(client, email):
-    # public.users.id has a FK → auth.users(id), so we must create the auth user first
-    # and use the returned ID. email_confirm=True skips the confirmation email.
     resp = client.auth.admin.create_user({
         "email": email,
         "password": "Seed@Data#2024!",
@@ -267,7 +293,8 @@ def gen_managers(client, n):
         slug = name.lower().replace(" ", ".")
         email = f"seed.mgr.{slug}.{uuid.uuid4().hex[:4]}@example.com"
         auth_id = create_auth_user(client, email)
-        ts = rand_past_ts(max_days=365)
+        # managers are the root — their signup date is the earliest anchor
+        ts = (now_utc() - timedelta(days=random.randint(30, 365))).isoformat()
         rows.append({
             "id": auth_id,
             "authUserId": auth_id,
@@ -286,7 +313,8 @@ def gen_boards(managers):
     rows = []
     for mgr in managers:
         idx = random.randint(0, len(BOARD_NAMES) - 1)
-        ts = rand_past_ts(max_days=300)
+        # board created after the manager signed up
+        ts = rand_ts_after(mgr["createdAt"], max_days_after=30)
         rows.append({
             "id": tid(),
             "managerId": mgr["id"],
@@ -308,7 +336,8 @@ def gen_reportees_and_memberships(client, boards):
             slug = name.lower().replace(" ", ".")
             email = f"seed.rep.{slug}.{uuid.uuid4().hex[:4]}@example.com"
             auth_id = create_auth_user(client, email)
-            ts = rand_past_ts(max_days=280)
+            # reportee joined the board after the board was created
+            ts = rand_ts_after(board["createdAt"], max_days_after=180)
             reportee_rows.append({
                 "id": auth_id,
                 "authUserId": auth_id,
@@ -323,7 +352,7 @@ def gen_reportees_and_memberships(client, boards):
                 "id": tid(),
                 "boardId": board["id"],
                 "userId": auth_id,
-                "joinedAt": ts,
+                "joinedAt": ts,  # joined = same moment as account created
             })
     return reportee_rows, membership_rows
 
@@ -331,16 +360,19 @@ def gen_reportees_and_memberships(client, boards):
 def gen_subscriptions(managers):
     rows = []
     for mgr in managers:
-        plan    = pick(["free", "pro", "pro_plus"],         [55, 30, 15])
+        plan    = pick(["free", "pro", "pro_plus"],                         [55, 30, 15])
         status  = pick(["active", "canceled", "past_due", "complimentary"], [75, 10, 10, 5])
-        billing = pick(["monthly", "annual"],               [70, 30])
+        billing = pick(["monthly", "annual"],                               [70, 30])
         is_comp = status == "complimentary"
-        ts = rand_past_ts(max_days=300)
-        period_end = None
+        # subscription created after manager signed up (within first 30 days)
+        ts = rand_ts_after(mgr["createdAt"], max_days_after=30)
+        # current_period_end: future for active, past for lapsed, null for complimentary
         if status == "active":
-            period_end = (
-                datetime.now(timezone.utc) + timedelta(days=random.randint(5, 365))
-            ).isoformat()
+            period_end = (now_utc() + timedelta(days=random.randint(5, 365))).isoformat()
+        elif status in ("canceled", "past_due", "expired"):
+            period_end = (now_utc() - timedelta(days=random.randint(1, 90))).isoformat()
+        else:
+            period_end = None
         rows.append({
             "id": tid(),
             "user_id": mgr["id"],
@@ -356,42 +388,57 @@ def gen_subscriptions(managers):
 
 
 def gen_entries(boards, memberships_by_board, managers_by_board):
+    """
+    memberships_by_board: {board_id: [(user_id, joined_at), ...]}
+    managers_by_board:    {board_id: (manager_id, manager_created_at)}
+    """
     categories = [
         "achievement", "impact", "learning", "recognition", "challenge",
         "certification", "positive_observation", "improvement_area",
         "coaching_note", "other", "discipline_issue",
         "project_contribution", "appreciation", "blocker", "issue",
     ]
-    # mirrors approximate real prod distribution (achievement heaviest)
     cat_weights = [28, 20, 14, 8, 7, 3, 3, 2, 1, 3, 2, 5, 4, 2, 2]
 
     rows = []
     for board in boards:
-        members = memberships_by_board.get(board["id"], [])
-        manager_id = managers_by_board[board["id"]]
+        members = memberships_by_board.get(board["id"], [])  # [(user_id, joined_at)]
+        manager_id, manager_created_at = managers_by_board[board["id"]]
         if not members:
             continue
 
         total = random.randint(4, 12)
         n_self = random.randint(1, 2)
 
-        # Manager self-entries (employeeId = managerId)
+        # Self-entries: manager logs their own work (joinedAt = manager's signup date)
         for _ in range(n_self):
-            rows.append(_build_entry(board["id"], manager_id, manager_id, categories, cat_weights, is_self=True))
+            rows.append(_build_entry(
+                board["id"], manager_id, manager_id, manager_created_at,
+                categories, cat_weights, is_self=True,
+            ))
 
-        # Team entries from reportees
+        # Team entries: one of the board's members logs work
         for _ in range(total - n_self):
-            member_id = random.choice(members)
-            rows.append(_build_entry(board["id"], member_id, member_id, categories, cat_weights, is_self=False))
+            member_id, joined_at = random.choice(members)
+            rows.append(_build_entry(
+                board["id"], member_id, member_id, joined_at,
+                categories, cat_weights, is_self=False,
+            ))
 
     return rows
 
 
-def _build_entry(board_id, employee_id, created_by, categories, weights, is_self):
+def _build_entry(board_id, employee_id, created_by, joined_at, categories, weights, is_self):
     category = pick(categories, weights)
     title, desc = random.choice(ENTRY_TEMPLATES[category])
     status = pick(["draft", "pending_approval", "published"], [20, 20, 60])
-    ts = rand_past_ts()
+
+    # entryDate = when the work happened (after employee joined, up to 150 days later)
+    entry_date = rand_date_after(joined_at, max_days_after=150)
+    # createdAt = when it was logged — after or on entryDate (people log work after it happens)
+    created_ts = rand_ts_after(entry_date + "T00:00:00+00:00", max_days_after=14)
+    updated_ts = created_ts
+
     entry = {
         "id": tid(),
         "boardId": board_id,
@@ -401,9 +448,9 @@ def _build_entry(board_id, employee_id, created_by, categories, weights, is_self
         "category": category,
         "title": title,
         "description": desc,
-        "entryDate": rand_past_date(),
-        "createdAt": ts,
-        "updatedAt": ts,
+        "entryDate": entry_date,
+        "createdAt": created_ts,
+        "updatedAt": updated_ts,
         "status": status,
     }
     if category == "certification" and random.random() < 0.5:
@@ -412,19 +459,23 @@ def _build_entry(board_id, employee_id, created_by, categories, weights, is_self
         entry["goalTag"] = random.choice(GOAL_TAGS)
     if status == "published" and not is_self and random.random() < 0.20:
         entry["managerNote"] = random.choice(MANAGER_NOTES)
+        # manager added the note some time after the entry was created
+        entry["updatedAt"] = rand_ts_after(created_ts, max_days_after=14)
     return entry
 
 
 def gen_announcements(boards, managers_by_board):
     rows = []
     for board in boards:
+        manager_id, _ = managers_by_board[board["id"]]
         for _ in range(random.randint(1, 3)):
             title, message = random.choice(ANNOUNCEMENT_TEMPLATES)
-            ts = rand_past_ts()
+            # announcement posted after the board was created
+            ts = rand_ts_after(board["createdAt"], max_days_after=150)
             rows.append({
                 "id": tid(),
                 "boardId": board["id"],
-                "createdByUserId": managers_by_board[board["id"]],
+                "createdByUserId": manager_id,
                 "title": title,
                 "message": message,
                 "createdAt": ts,
@@ -433,39 +484,86 @@ def gen_announcements(boards, managers_by_board):
     return rows
 
 
-
-def gen_support_requests(all_user_ids):
-    types = ["bug", "feature", "support"]
+def gen_support_requests(users_with_ts):
+    """users_with_ts: [(user_id, created_at), ...]"""
     rows = []
     for _ in range(random.randint(2, 5)):
-        req_type = random.choice(types)
+        req_type = random.choice(["bug", "feature", "support"])
+        user_id, user_created_at = random.choice(users_with_ts)
         rows.append({
             "id": tid(),
-            "userId": random.choice(all_user_ids),
+            "userId": user_id,
             "type": req_type,
             "message": random.choice(SUPPORT_TEMPLATES[req_type]),
-            "createdAt": rand_past_ts(max_days=90),
+            # request submitted after the user account existed
+            "createdAt": rand_ts_after(user_created_at, max_days_after=90),
         })
     return rows
 
 
-def gen_usage_events(all_user_ids):
+def gen_usage_events(users_with_ts):
+    """users_with_ts: [(user_id, created_at), ...]"""
     rows = []
     for _ in range(random.randint(3, 8)):
+        user_id, user_created_at = random.choice(users_with_ts)
         rows.append({
             "id": uid(),
-            "user_id": random.choice(all_user_ids),
+            "user_id": user_id,
             "feature": "ai_summary",
-            "created_at": rand_past_ts(max_days=90),
+            # event fired after the user account existed
+            "created_at": rand_ts_after(user_created_at, max_days_after=90),
         })
     return rows
+
+# ── cleanup ───────────────────────────────────────────────────────────────────
+
+def cleanup_seed_data(client):
+    """Delete all rows seeded by this script (identified by seed.* email pattern)."""
+    print("[cleanup] Finding seed users...")
+    result = client.table("users").select("id,role").like("email", "seed.%@example.com").execute()
+    if not result.data:
+        print("[cleanup] No seed data found — nothing to clean.")
+        return
+
+    all_ids  = [r["id"] for r in result.data]
+    mgr_ids  = [r["id"] for r in result.data if r["role"] == "manager"]
+
+    board_ids = []
+    if mgr_ids:
+        b = client.table("boards").select("id").in_("managerId", mgr_ids).execute()
+        board_ids = [r["id"] for r in b.data]
+
+    # delete dependents first (FK order)
+    if board_ids:
+        client.table("entries").delete().in_("boardId", board_ids).execute()
+        client.table("memberships").delete().in_("boardId", board_ids).execute()
+        client.table("announcements").delete().in_("boardId", board_ids).execute()
+    if all_ids:
+        client.table("subscriptions").delete().in_("user_id", all_ids).execute()
+        client.table("support_requests").delete().in_("userId", all_ids).execute()
+        client.table("usage_events").delete().in_("user_id", all_ids).execute()
+    if board_ids:
+        client.table("boards").delete().in_("id", board_ids).execute()
+    if all_ids:
+        client.table("users").delete().in_("id", all_ids).execute()
+
+    # remove from Supabase Auth
+    deleted_auth = 0
+    for user_id in all_ids:
+        try:
+            client.auth.admin.delete_user(user_id)
+            deleted_auth += 1
+        except Exception as e:
+            print(f"[cleanup] Warning: could not delete auth user {user_id}: {e}")
+
+    print(f"[cleanup] Removed {len(all_ids)} seed users ({deleted_auth} auth records) "
+          f"and all related rows across 7 tables.")
 
 # ── insert helper ─────────────────────────────────────────────────────────────
 
 def insert(client, table, rows):
     if not rows:
         return 0
-    # users: upsert in case a DB trigger already created the profile row from auth
     if table == "users":
         client.table(table).upsert(rows, on_conflict="id").execute()
     else:
@@ -478,47 +576,51 @@ def run():
     client = get_supabase_client()
     counts = {}
 
-    # 1. Managers (creates auth users + public profiles)
+    # 1. Managers
     managers = stamp_today(gen_managers(client, random.randint(2, 4)), ts_field="createdAt")
     counts["users (managers)"] = insert(client, "users", managers)
 
-    # 2. Boards (depends on managers)
+    # 2. Boards — created after their manager
     boards = stamp_today(gen_boards(managers), ts_field="createdAt")
     counts["boards"] = insert(client, "boards", boards)
 
-    managers_by_board = {b["id"]: b["managerId"] for b in boards}
+    # board_id → (manager_id, manager_created_at)
+    mgr_lookup = {m["id"]: m["createdAt"] for m in managers}
+    managers_by_board = {b["id"]: (b["managerId"], mgr_lookup[b["managerId"]]) for b in boards}
 
-    # 3. Reportees + memberships (depends on boards)
+    # 3. Reportees + memberships — joined after their board was created
     reportees, memberships = gen_reportees_and_memberships(client, boards)
     stamp_today(reportees, ts_field="createdAt")
     stamp_today(memberships, ts_field="joinedAt")
     counts["users (reportees)"] = insert(client, "users", reportees)
     counts["memberships"] = insert(client, "memberships", memberships)
 
+    # board_id → [(user_id, joined_at)]
     memberships_by_board = {}
     for m in memberships:
-        memberships_by_board.setdefault(m["boardId"], []).append(m["userId"])
+        memberships_by_board.setdefault(m["boardId"], []).append((m["userId"], m["joinedAt"]))
 
-    # 4. Subscriptions (depends on managers)
+    # 4. Subscriptions — created after manager signed up
     subs = stamp_today(gen_subscriptions(managers), ts_field="created_at")
     counts["subscriptions"] = insert(client, "subscriptions", subs)
 
-    # 5. Entries (depends on boards + members)
-    # stamp entryDate (the business date MetricFlow uses) so metrics show today's activity
+    # 5. Entries — entryDate after employee joined; createdAt after entryDate
     entries = stamp_today(gen_entries(boards, memberships_by_board, managers_by_board), date_field="entryDate")
     counts["entries"] = insert(client, "entries", entries)
 
-    # 6. Announcements (depends on boards + managers)
+    # 6. Announcements — posted after board was created
     announcements = stamp_today(gen_announcements(boards, managers_by_board), ts_field="createdAt")
     counts["announcements"] = insert(client, "announcements", announcements)
 
-    # 7. Support requests
-    all_user_ids = [u["id"] for u in managers + reportees]
-    support = stamp_today(gen_support_requests(all_user_ids), ts_field="createdAt")
+    # 7. Support requests + usage events — after the user's account existed
+    all_users_with_ts = (
+        [(u["id"], u["createdAt"]) for u in managers] +
+        [(u["id"], u["createdAt"]) for u in reportees]
+    )
+    support = stamp_today(gen_support_requests(all_users_with_ts), ts_field="createdAt")
     counts["support_requests"] = insert(client, "support_requests", support)
 
-    # 8. Usage events
-    usage = stamp_today(gen_usage_events(all_user_ids), ts_field="created_at")
+    usage = stamp_today(gen_usage_events(all_users_with_ts), ts_field="created_at")
     counts["usage_events"] = insert(client, "usage_events", usage)
 
     print("\nSeed run complete:")
@@ -527,4 +629,7 @@ def run():
 
 
 if __name__ == "__main__":
+    client = get_supabase_client()
+    if "--reset" in sys.argv:
+        cleanup_seed_data(client)
     run()
