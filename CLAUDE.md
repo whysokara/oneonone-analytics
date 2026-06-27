@@ -101,7 +101,9 @@ dbt build --select stg_entries               # single model
 # MetricFlow
 # IMPORTANT: always prefix mf commands with DBT_PROFILES_DIR=~/.dbt
 # (dbt-metricflow 0.13.0 + dbt-core 1.11 version mismatch — mf can't find profiles without it)
-DBT_PROFILES_DIR=~/.dbt mf health-checks
+# NOTE: mf health-checks must be run from the transform/ dir (mf looks for dbt_project.yml there).
+#       mf query and mf validate-configs work from the repo root.
+cd transform && DBT_PROFILES_DIR=~/.dbt mf health-checks
 DBT_PROFILES_DIR=~/.dbt mf query --metrics mrr --group-by metric_time__month
 DBT_PROFILES_DIR=~/.dbt mf query --metrics active_managers --group-by metric_time__week
 DBT_PROFILES_DIR=~/.dbt mf validate-configs

@@ -73,7 +73,8 @@ metrics:
     description: "Cumulative count of managers who signed up in the current calendar month."
     type: cumulative
     type_params:
-      measure: manager_count
+      measure:
+        name: manager_count
       cumulative_type_params:
         grain_to_date: month
 
