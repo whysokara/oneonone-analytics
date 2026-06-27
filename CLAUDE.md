@@ -13,14 +13,21 @@ from raw ingestion to the AI analyst agent.
 
 ```
 Supabase (source)
-  → Python ingestion (incremental, GitHub Actions cron)
+  → Python ingestion          (Supabase → Snowflake RAW; atomic load-then-swap)
   → Snowflake ONEONONE_DB.RAW
-  → dbt staging layer       (stg_* — typed, renamed, no business logic)
-  → dbt marts               (dim_*, fct_*, mart_* — business logic)
+  → dbt staging layer         (stg_* — typed, renamed, no business logic)
+  → dbt intermediate layer    (int_* — reusable joins/derivations)
+  → dbt marts                 (dim_*, fct_*, mart_* — business logic)
   → MetricFlow semantic layer (10 business metrics)
-  → LangGraph agent          (4 tools, per-manager scoping)
-  → Next.js /api/analyst     (in-app chat interface in the fullstack app)
+  → LangGraph agent           (4 tools, per-manager scoping)
+  → Next.js /api/analyst      (in-app chat interface in the fullstack app)
 ```
+
+**Orchestration:** Dagster runs `seed → ingest → dbt` as one connected asset graph
+(dbt tests surface as asset checks), scheduled daily at 11:00 IST. Code location:
+`orchestration/definitions.py`. The old GitHub Actions ingest cron has been removed —
+Dagster is the orchestrator (note: its schedule only fires while the Dagster daemon
+runs; an always-on deployment is still needed to fully replace a cloud cron).
 
 ---
 
@@ -29,30 +36,33 @@ Supabase (source)
 ```
 oneonone-analytics/
 ├── ingestion/                  # Python: Supabase → Snowflake
-│   └── ingest.py
-├── dbt/                        # dbt project root
+│   ├── ingest.py               # full refresh, atomic load-then-swap
+│   ├── seed_data.py            # generate/append realistic seed rows in Supabase
+│   └── db.py                   # Supabase + Snowflake connection helpers
+├── transform/                  # dbt project root (NOTE: folder is "transform", not "dbt")
 │   ├── models/
 │   │   ├── staging/            # stg_* — one model per source table
 │   │   │   ├── _sources.yml
-│   │   │   └── _schema.yml
+│   │   │   └── _models.yml
+│   │   ├── intermediate/       # int_* — reusable joins/derivations
+│   │   │   └── _models.yml
 │   │   ├── marts/              # dim_*, fct_*, mart_*
-│   │   │   └── _schema.yml
-│   │   └── metrics/            # MetricFlow metric definitions
+│   │   │   └── _models.yml
+│   │   └── metrics/            # MetricFlow metric definitions (Week 4)
+│   ├── seeds/                  # static reference data (e.g. plan_pricing)
+│   ├── macros/                 # reusable Jinja macros (incl. generate_schema_name)
 │   ├── tests/                  # custom singular tests
-│   ├── macros/                 # reusable Jinja macros
 │   ├── snapshots/              # SCD Type 2 if needed
-│   ├── seeds/                  # static reference data only
-│   ├── dbt_project.yml
-│   └── profiles.yml
+│   └── dbt_project.yml         # profiles.yml lives in ~/.dbt (not in the project)
+├── orchestration/              # Dagster code location
+│   └── definitions.py          # assets (seed_supabase, raw_ingest, dbt_models) + daily_pipeline job + schedule
+├── snowflake/                  # setup.sql / teardown.sql / run_sql.py — warehouse, DB, schemas, RBAC
 ├── agent/                      # LangGraph AI analyst
 │   ├── tools/                  # get_metric, list_available_metrics, compare_periods, get_trend
 │   └── graph.py
 ├── eval/                       # 20-question eval set + scoring script
 │   ├── eval_set.json
 │   └── run_eval.py
-├── .github/
-│   └── workflows/
-│       └── ingest.yml          # daily cron 2am IST
 ├── .venv/                      # gitignored
 ├── requirements.txt
 ├── .env.example
@@ -66,10 +76,19 @@ oneonone-analytics/
 ```bash
 # Environment
 source .venv/bin/activate
+# NOTE: with pyenv, its shims can shadow the venv's CLIs even when the venv looks
+# active. Prefer the explicit path (.venv/bin/dagster, .venv/bin/dbt) if a command
+# resolves to the wrong version (e.g. dagster runs from ~/.pyenv instead of .venv).
 
-# Ingestion
-python ingestion/ingest.py                   # full run
-python ingestion/ingest.py --table entries   # single table
+# Orchestration (Dagster) — the normal way to run the pipeline
+.venv/bin/dagster dev -f orchestration/definitions.py                            # local UI at localhost:3000
+.venv/bin/dagster job execute -f orchestration/definitions.py -j daily_pipeline  # run full pipeline: seed → ingest → dbt
+# After changing dbt models, refresh the manifest so Dagster's graph updates:
+cd transform && dbt parse
+
+# Ingestion (run a step directly, without Dagster)
+python ingestion/seed_data.py                # append realistic seed rows to Supabase
+python ingestion/ingest.py                   # full run (Supabase → Snowflake RAW)
 
 # dbt
 dbt run                                      # build all models
