@@ -1,0 +1,141 @@
+"""
+Dagster entry point — a "code location".
+
+`dagster dev -f definitions.py` loads this file and looks for a `Definitions`
+object, the registry of everything Dagster knows about (assets, jobs, schedules).
+
+We build the pipeline up one asset per step:
+  Step A (here): seed_supabase  ->  Step B: raw_ingest  ->  Step C: dbt models
+"""
+
+import sys
+from pathlib import Path
+
+import dagster as dg
+from dagster_dbt import DagsterDbtTranslator, DbtCliResource, DbtProject, dbt_assets
+
+# The existing ingestion scripts use a bare `from db import ...`, which only
+# resolves when `ingestion/` is on the import path. Absolute path, computed once.
+INGESTION_DIR = str((Path(__file__).resolve().parent.parent / "ingestion"))
+
+
+def _ensure_ingestion_importable() -> None:
+    """Put ingestion/ on sys.path in *this* process. Called inside each asset so it
+    holds no matter which subprocess Dagster runs the step in. No edits to the
+    ingestion scripts, so the GH Actions cron keeps working."""
+    if INGESTION_DIR not in sys.path:
+        sys.path.insert(0, INGESTION_DIR)
+
+
+@dg.asset
+def seed_supabase(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
+    """Append a fresh batch of realistic rows across all 9 Supabase source tables.
+
+    Wraps ingestion/seed_data.py in APPEND mode (no --reset), so Supabase grows
+    each run. The seeded data lives in Supabase — downstream assets depend on this
+    asset for ORDERING only, not for a passed-in value.
+    """
+    _ensure_ingestion_importable()
+    import seed_data
+
+    context.log.info("Seeding Supabase (append mode) — see logs below for per-table counts.")
+    seed_data.run()  # prints per-table +counts; Dagster captures stdout into the run logs
+
+    return dg.MaterializeResult(
+        metadata={
+            "mode": "append",
+            "wraps": "ingestion/seed_data.py",
+        }
+    )
+
+
+# mirrors ingestion/ingest.py TABLES — one Dagster asset per RAW table so each dbt
+# source can depend on its own upstream (dbt requires a unique key per source).
+RAW_TABLES = [
+    "users", "boards", "memberships", "entries", "announcements",
+    "announcement_reactions", "subscriptions", "usage_events", "support_requests",
+]
+
+
+@dg.multi_asset(
+    deps=[seed_supabase],
+    outs={t: dg.AssetOut(key=dg.AssetKey(["raw", t])) for t in RAW_TABLES},
+)
+def raw_ingest(context: dg.AssetExecutionContext):
+    """Load every Supabase source table into Snowflake RAW (atomic full refresh),
+    emitting one asset per table (`raw/<table>`) so each dbt source connects 1:1.
+
+    `deps=[seed_supabase]` is an ORDERING dependency — the data travels through
+    Supabase, not through Dagster. Reuses ingest.fetch_table / ingest.load_table.
+    """
+    _ensure_ingestion_importable()
+    import ingest
+    from db import get_snowflake_connection, get_supabase_client
+
+    supa = get_supabase_client()
+    sf = get_snowflake_connection()
+    try:
+        for table in RAW_TABLES:
+            df = ingest.fetch_table(supa, table)
+            ingest.load_table(sf, table, df)
+            context.log.info(f"{table}: {len(df)} rows -> RAW")
+            yield dg.MaterializeResult(
+                asset_key=dg.AssetKey(["raw", table]),
+                metadata={"rows": len(df)},
+            )
+    finally:
+        sf.close()
+
+
+# ── dbt: load every model as a Dagster asset ────────────────────────────────────
+# DbtProject points at our dbt project (transform/). prepare_if_dev() regenerates
+# the manifest when running under `dagster dev`; for CLI runs we `dbt parse` first.
+DBT_PROJECT_DIR = Path(__file__).resolve().parent.parent / "transform"
+dbt_project = DbtProject(project_dir=DBT_PROJECT_DIR)
+dbt_project.prepare_if_dev()
+
+
+class _DbtTranslator(DagsterDbtTranslator):
+    """Map each dbt *source* to its matching `raw/<table>` asset produced by
+    `raw_ingest`, so every staging model lands downstream of its specific RAW table."""
+
+    def get_asset_key(self, dbt_resource_props):
+        if dbt_resource_props["resource_type"] == "source":
+            return dg.AssetKey(["raw", dbt_resource_props["name"]])
+        return super().get_asset_key(dbt_resource_props)
+
+
+@dbt_assets(manifest=dbt_project.manifest_path, dagster_dbt_translator=_DbtTranslator())
+def dbt_models(context: dg.AssetExecutionContext, dbt: DbtCliResource):
+    """One asset per dbt model; dbt tests surface as asset checks.
+    `dbt build` = run + test together, in DAG order."""
+    yield from dbt.cli(["build"], context=context).stream()
+
+
+# ── job + schedule ──────────────────────────────────────────────────────────────
+# One job over the whole asset graph (seed -> ingest -> dbt), run daily at 11:00 IST.
+daily_pipeline_job = dg.define_asset_job(
+    name="daily_pipeline",
+    selection=dg.AssetSelection.all(),
+)
+
+daily_schedule = dg.ScheduleDefinition(
+    name="daily_11am_ist",
+    job=daily_pipeline_job,
+    cron_schedule="0 11 * * *",          # 11:00 ...
+    execution_timezone="Asia/Kolkata",   # ... India time — Dagster handles the UTC offset
+)
+
+
+defs = dg.Definitions(
+    assets=[seed_supabase, raw_ingest, dbt_models],
+    jobs=[daily_pipeline_job],
+    schedules=[daily_schedule],
+    resources={
+        # profiles.yml lives in ~/.dbt (not in the project dir), so point dbt at it
+        "dbt": DbtCliResource(
+            project_dir=dbt_project,
+            profiles_dir=str(Path.home() / ".dbt"),
+        ),
+    },
+)
