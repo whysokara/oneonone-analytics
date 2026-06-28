@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: stg_users
+    config:
+      tags: ['users']
     columns:
       - name: user_id
         tests: [unique, not_null]
@@ -12,16 +14,22 @@ models:
                 values: [manager, reportee]
 
   - name: stg_boards
+    config:
+      tags: ['boards']
     columns:
       - name: board_id
         tests: [unique, not_null]
 
   - name: stg_memberships
+    config:
+      tags: ['boards']
     columns:
       - name: membership_id
         tests: [unique, not_null]
 
   - name: stg_entries
+    config:
+      tags: ['entries']
     columns:
       - name: entry_id
         tests: [unique, not_null]
@@ -32,11 +40,15 @@ models:
                 values: [shared, manager_private]
 
   - name: stg_announcements
+    config:
+      tags: ['announcements']
     columns:
       - name: announcement_id
         tests: [unique, not_null]
 
   - name: stg_announcement_reactions
+    config:
+      tags: ['announcements']
     columns:
       - name: reaction_id
         tests: [unique, not_null]
@@ -47,6 +59,8 @@ models:
                 values: [thumbs_up, heart, tada, eyes]
 
   - name: stg_subscriptions
+    config:
+      tags: ['subscriptions', 'revenue']
     columns:
       - name: subscription_id
         tests: [unique, not_null]
@@ -62,11 +76,15 @@ models:
                 values: [active, canceled, past_due, expired, complimentary]
 
   - name: stg_support_requests
+    config:
+      tags: ['support']
     columns:
       - name: support_request_id
         tests: [unique, not_null]
 
   - name: stg_usage_events
+    config:
+      tags: ['usage']
     columns:
       - name: usage_event_id
         tests: [unique, not_null]

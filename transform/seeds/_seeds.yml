@@ -2,6 +2,8 @@ version: 2
 
 seeds:
   - name: plan_pricing
+    config:
+      tags: ['seed', 'revenue']
     description: >
       Reference pricing per plan, sourced from the OneOnOne landing page
       (one-on-one-alpha.vercel.app). monthly_price is the price for a monthly-billed

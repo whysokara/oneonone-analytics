@@ -5,6 +5,8 @@ models:
     description: >
       One row per manager (users with role='manager'), enriched with plan/MRR status,
       team size, activation, and entry activity. Built on the intermediate layer.
+    config:
+      tags: ['dim', 'users']
     columns:
       - name: manager_id
         description: Primary key — the manager's user_id.
@@ -43,6 +45,8 @@ models:
 
   - name: dim_teams
     description: One row per board (team), with team size and the manager's current plan.
+    config:
+      tags: ['dim', 'boards']
     columns:
       - name: board_id
         description: Primary key — the board id.
@@ -72,6 +76,8 @@ models:
 
   - name: fct_entries
     description: One row per entry — business-facing fact with self-entry and first-entry flags.
+    config:
+      tags: ['fct', 'entries']
     columns:
       - name: entry_id
         description: Primary key — the entry id.
@@ -116,6 +122,8 @@ models:
     description: >
       One row per subscription record (full history). Adds per-row MRR contribution and a
       transition_type derived from the prior row per user.
+    config:
+      tags: ['fct', 'subscriptions', 'revenue']
     columns:
       - name: subscription_id
         description: Primary key — the subscription record id.
@@ -155,6 +163,8 @@ models:
     description: >
       One row per manager, snapshot (recomputed each run). Churn early-warning with raw
       activity components and a derived health_status verdict.
+    config:
+      tags: ['mart', 'health']
     columns:
       - name: manager_id
         description: Primary key — the manager.

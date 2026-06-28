@@ -7,6 +7,8 @@ models:
       flags: is_self_entry (manager logging their own work) and is_first_entry (an
       employee's earliest published entry). Reused by fct_entries, dim_managers,
       mart_manager_health.
+    config:
+      tags: ['entries']
     columns:
       - name: entry_id
         description: Primary key — one row per entry.
@@ -20,6 +22,8 @@ models:
     description: >
       One row per board with team_size = count of members excluding the board's manager.
       Boards with no reportees are 0. Reused by dim_teams, dim_managers, mart_manager_health.
+    config:
+      tags: ['boards']
     columns:
       - name: board_id
         description: Primary key — one row per board.
@@ -32,6 +36,8 @@ models:
       One row per user — their current subscription (active preferred, else most recent),
       with current_plan, is_active, is_paying, and mrr_amount (active & non-complimentary &
       paid plan only). Reused by dim_managers, dim_teams, mart_manager_health.
+    config:
+      tags: ['subscriptions', 'revenue']
     columns:
       - name: user_id
         description: Primary key — one row per user.
