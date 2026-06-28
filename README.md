@@ -1,93 +1,250 @@
-# OneOnOne Analytics
+# OneOnOne Analytics Pipeline
 
-End-to-end analytics pipeline on top of the [OneOnOne](https://github.com/whysokara/oneonone) SaaS product — a shared work journal for managers and their teams.
+> Production-grade data pipeline on a live SaaS product — from Supabase to Snowflake, dbt, MetricFlow, and a LangGraph AI analyst.
+
+Built on top of [OneOnOne](https://github.com/whysokara/oneonone) — a shared work journal for managers and their teams. Not a tutorial dataset. Real users, real subscriptions, real MRR.
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)
+![dbt](https://img.shields.io/badge/dbt-1.9-FF694B?style=flat&logo=dbt&logoColor=white)
+![Snowflake](https://img.shields.io/badge/Snowflake-cloud-29B5E8?style=flat&logo=snowflake&logoColor=white)
+![Dagster](https://img.shields.io/badge/Dagster-1.12-654FF0?style=flat&logo=dagster&logoColor=white)
+![MetricFlow](https://img.shields.io/badge/MetricFlow-0.13-3DDC84?style=flat)
+
+**9 source tables · 17 dbt models · 80+ tests · 16 MetricFlow metrics · $85.83 live MRR · daily Dagster pipeline**
+
+---
 
 ## Architecture
 
-```
-Supabase (live app data)
-  → seed_data  →  Python ingestion  →  Snowflake ONEONONE_DB.RAW
-  → dbt staging (typed)  →  dbt intermediate (reusable joins)  →  dbt marts (business logic)
-  → MetricFlow semantic layer (10 metrics)
-  → LangGraph AI analyst agent
-  → /api/analyst (in-app chat inside OneOnOne)
+```mermaid
+flowchart LR
+    A[(Supabase\nPostgreSQL\n9 tables)] -->|"paginated reads\nfull-refresh"| B(Python\nIngestion)
+    B -->|"atomic\nload-then-swap"| C[(Snowflake\nRAW)]
+    C --> D("dbt Staging\n9 models · views")
+    D --> E("dbt Intermediate\n3 models · views")
+    E --> F("dbt Marts\n5 models · tables")
+    F --> G("MetricFlow\n16 metrics")
+    G --> H("LangGraph\nAI Analyst 🔜")
+    H --> I("Next.js\n/api/analyst 🔜")
+
+    J("Dagster\ndaily 11:00 IST") -.->|orchestrates| B
+    J -.->|orchestrates| D
+
+    style H fill:#f5f5f5,stroke:#bbb,color:#999
+    style I fill:#f5f5f5,stroke:#bbb,color:#999
 ```
 
-**Orchestration:** [Dagster](https://dagster.io) runs `seed → ingest → dbt` as one
-connected asset graph (dbt tests surface as asset checks), scheduled daily at 11:00 IST.
-The graph and run history are visible in the Dagster UI (`dagster dev`).
+---
+
+## What's Shipped
+
+| Layer | Status | Detail |
+|---|---|---|
+| Python ingestion | ✅ Shipped | Paginated reads, atomic load-then-swap, 9 tables |
+| Snowflake RBAC | ✅ Shipped | LOADER + TRANSFORMER least-privilege roles |
+| dbt staging | ✅ Shipped | 9 models, camelCase → snake_case, TIMESTAMP_TZ |
+| dbt intermediate | ✅ Shipped | 3 views — team size, enriched entries, current subscription |
+| dbt marts | ✅ Shipped | 5 tables, 80+ tests, `plan_pricing` seed |
+| MetricFlow semantic layer | ✅ Shipped | 3 semantic models, 16 metrics, 4018-day time spine |
+| Dagster orchestration | ✅ Shipped | Asset graph, daily schedule, dbt tests as asset checks |
+| LangGraph AI analyst | 🔜 Week 5 | 4 tools, per-manager scoping |
+| 20-question eval set | 🔜 Week 6 | Confidence handling, sanity checks |
+| In-app chat | 🔜 Week 7 | Next.js `/api/analyst`, manager-scoped answers |
+
+---
 
 ## Stack
 
-| Layer | Tool |
-|---|---|
-| Source | Supabase (Postgres) |
-| Ingestion | Python (Supabase → Snowflake) |
-| Orchestration | Dagster (assets, schedule, lineage) |
-| Destination | Snowflake |
-| Transformation | dbt (staging / intermediate / marts) + MetricFlow |
-| AI Agent | LangGraph |
-| In-app chat | Next.js API route |
+| Layer | Tool | Purpose |
+|---|---|---|
+| Source | Supabase (PostgreSQL) | Live production data, 9 tables, service-role auth |
+| Ingestion | Python · `supabase-py` · `snowflake-connector` | Paginated reads, atomic Snowflake loads |
+| Orchestration | Dagster | Asset graph, lineage UI, daily cron at 11:00 IST |
+| Warehouse | Snowflake | RAW / STAGING / MARTS schemas, RBAC |
+| Transformation | dbt Core | Staging → intermediate → marts, 80+ tests |
+| Semantic layer | MetricFlow | 3 semantic models, 16 business metrics |
+| AI Agent *(planned)* | LangGraph | 4 tools, answers scoped per manager |
+| In-app chat *(planned)* | Next.js | `/api/analyst` route inside OneOnOne |
+
+---
+
+## Data Models
+
+### Staging — 9 views (1:1 with source tables)
+| Model | Source Table | Key transformations |
+|---|---|---|
+| `stg_users` | `users` | camelCase → snake_case, cast to TIMESTAMP_TZ |
+| `stg_boards` | `boards` | camelCase → snake_case |
+| `stg_memberships` | `memberships` | full-refresh |
+| `stg_entries` | `entries` | camelCase → snake_case, entry lifecycle status |
+| `stg_subscriptions` | `subscriptions` | snake_case, plan / billing_cycle / status |
+| `stg_announcements` | `announcements` | camelCase → snake_case |
+| `stg_announcement_reactions` | `announcement_reactions` | full-refresh |
+| `stg_usage_events` | `usage_events` | append-only |
+| `stg_support_requests` | `support_requests` | full-refresh |
+
+### Intermediate — 3 views (reusable joins, no business logic in staging)
+| Model | Grain | Purpose |
+|---|---|---|
+| `int_entries_enriched` | one row per entry | Adds `is_self_entry`, `is_first_entry` flags |
+| `int_board_team_size` | one row per board | Member count excluding the manager |
+| `int_subscriptions_current` | one row per user | Joins `plan_pricing` seed, normalizes MRR, sets `is_paying` |
+
+### Marts — 5 tables (business logic, tested, materialized)
+| Model | Grain | Purpose |
+|---|---|---|
+| `dim_managers` | one row per manager | Plan, team size, activation status, MRR contribution |
+| `dim_teams` | one row per board | Team size, manager plan, creation date |
+| `fct_entries` | one row per entry | Category, status, `is_self_entry`, `is_first_entry` |
+| `fct_subscriptions` | one row per subscription event | MRR amount, transition type (new / upgrade / churn) |
+| `mart_manager_health` | one row per manager | Churn signal: entry frequency + last activity + plan |
+
+---
+
+## MetricFlow Metrics
+
+16 metrics across 3 semantic models, queryable via `mf query`.
+
+**Managers** (`sem_managers` → `dim_managers`)
+| Metric | Label | Description |
+|---|---|---|
+| `total_managers` | Total Managers | All manager accounts ever created |
+| `new_managers_mtd` | New Managers MTD | Cumulative sign-ups in the current calendar month |
+| `active_managers` | Active Managers | Managers with at least one published team entry |
+| `paying_managers` | Paying Managers | Managers on an active, non-complimentary paid plan |
+| `avg_team_size` | Average Team Size | Derived: total team members ÷ total managers |
+| `conversion_rate` | Conversion Rate | Ratio: paying managers ÷ total managers |
+| `total_team_size_metric` | Total Team Size | Sum of team sizes (numerator for avg_team_size) |
+
+**Entries** (`sem_entries` → `fct_entries`)
+| Metric | Label | Description |
+|---|---|---|
+| `team_entries` | Team Entries | All team entries, excluding manager self-entries |
+| `published_entries` | Published Entries | Published team entries (excludes drafts + self-entries) |
+| `entries_per_manager` | Entries per Manager | Derived cross-model: team entries ÷ total managers |
+| `team_adoption_rate` | Team Adoption Rate | Published entries per manager — directional adoption signal |
+| `feature_adoption` | Feature Adoption | Employees who logged their first published entry |
+
+**Subscriptions** (`sem_subscriptions` → `fct_subscriptions`)
+| Metric | Label | Description |
+|---|---|---|
+| `mrr` | Monthly Recurring Revenue | Active, non-complimentary subs; annual normalized to `annual_price / 12` |
+| `new_subscriptions` | New Subscriptions | New subscription sign-up events |
+| `churn_rate` | Churn Rate | Ratio: churn events ÷ new subscriptions |
+| `churn_count_metric` | Churn Events | Raw count of churn transition events |
+
+```bash
+# Sample queries
+DBT_PROFILES_DIR=~/.dbt mf query --metrics mrr --group-by metric_time__month
+DBT_PROFILES_DIR=~/.dbt mf query --metrics active_managers --group-by metric_time__week
+DBT_PROFILES_DIR=~/.dbt mf query --metrics conversion_rate,total_managers
+```
+
+---
+
+## Business Rules in the Pipeline
+
+These are product decisions encoded as data constraints — they exist because the pipeline author built OneOnOne and knows why each rule matters:
+
+- **Manager self-entries excluded** — when `employeeId = managerId`, the entry is the manager logging their own work. Excluded from all team metrics (`is_self_entry = false` filter), included in volume totals.
+- **MRR filter** — only `status = 'active'` AND `is_complimentary = false`. Free plan = $0. Complimentary grants = $0. Both columns checked.
+- **Annual MRR normalization** — `annual_price / 12`, not `monthly_price × 12`. Annual plans include 2 free months, so these are different numbers.
+- **Activation definition** — a manager is activated when at least one *team member* (not the manager) has a published entry. Board created ≠ activated.
+- **Financial year** — April–March (Q1 = Apr–Jun). Used for all business metrics. Usage quota tracking uses calendar quarters — never mixed.
+
+---
+
+## Data Lineage
+
+The full DAG from source tables to marts, generated by `dbt docs`:
+
+![dbt lineage](assets/dbt-lineage.png)
+
+> **To view locally:** `cd transform && dbt docs generate && dbt docs serve` — opens at `http://localhost:8080`
+
+---
+
+## Engineering Decisions Worth Noting
+
+**Atomic ingestion** — raw tables are loaded into `_STAGING` tables first, then renamed in a transaction. dbt never sees a half-loaded RAW table.
+
+**Pagination that caught 46% data loss** — `entries` had 1,863 rows but Supabase's default cap silently returned 1,000. Caught with an independent `count='exact'` check. Fixed with a `.range()` loop. Every other project that skips this has silent data loss.
+
+**Semantic layer before AI agent** — MetricFlow was built in Week 4; the LangGraph agent (Week 5) calls `mf query` under the hood. Metrics need a trusted, versioned definition before an LLM can cite them. Most "AI on data" demos skip this step.
+
+**Snowflake RBAC validation** — discovered that `DEFAULT_SECONDARY_ROLES = ('ALL')` means `USE ROLE X` doesn't actually isolate one role's privileges. Used `USE SECONDARY ROLES NONE` to validate the LOADER/TRANSFORMER separation was correct.
+
+**Dagster asset checks** — dbt tests surface as Dagster asset checks, not just CI output. A failing `unique` test on `fct_entries` shows in the lineage view next to the mart it guards — different debugging experience from reading a log.
+
+---
 
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # fill in Supabase + Snowflake credentials
 ```
 
-Copy `.env.example` to `.env` and fill in credentials.
-
-## Environment Variables
+### Environment Variables
 
 ```bash
 SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...       # always service-role, never anon key
 SNOWFLAKE_ACCOUNT=<org>-<account>
 SNOWFLAKE_USER=...
 SNOWFLAKE_PASSWORD=...
-SNOWFLAKE_WAREHOUSE=...
+SNOWFLAKE_WAREHOUSE=ONEONONE_WH
 SNOWFLAKE_DATABASE=ONEONONE_DB
 SNOWFLAKE_SCHEMA=RAW
 ```
 
-## Commands
+### Running the Pipeline
 
 ```bash
-# Orchestration (Dagster) — the normal way to run the pipeline
-.venv/bin/dagster dev -f orchestration/definitions.py                            # local UI at localhost:3000
-.venv/bin/dagster job execute -f orchestration/definitions.py -j daily_pipeline  # run full pipeline (seed → ingest → dbt), no UI
-# After changing dbt models, refresh the manifest so Dagster sees them:
+# Full pipeline via Dagster (recommended)
+.venv/bin/dagster dev -f orchestration/definitions.py          # UI at localhost:3000
+.venv/bin/dagster job execute -f orchestration/definitions.py -j daily_pipeline
+
+# After editing dbt models, refresh Dagster's asset graph:
 cd transform && dbt parse
 
-# Run the underlying steps directly (without Dagster)
-python ingestion/seed_data.py      # append seed rows to Supabase
-python ingestion/ingest.py         # Supabase → Snowflake RAW
-dbt build                          # run all models + tests
-dbt build --select stg_entries     # single model
+# Run individual steps directly
+python ingestion/seed_data.py     # append seed rows to Supabase
+python ingestion/ingest.py        # Supabase → Snowflake RAW
+dbt build                         # run all models + tests
+dbt build --select marts.*        # marts only
 
-# MetricFlow
-mf query --metrics mrr --group-by metric_time__month
-
-# Eval
-python eval/run_eval.py
+# MetricFlow (run from repo root; health-check must be run from transform/)
+DBT_PROFILES_DIR=~/.dbt mf query --metrics mrr --group-by metric_time__month
+cd transform && DBT_PROFILES_DIR=~/.dbt mf health-checks
 ```
 
-> Note: use `.venv/bin/dagster` (explicit path) if you use pyenv — its shims can
-> shadow the venv's `dagster` even when the venv looks active.
+> If you use pyenv, prefer `.venv/bin/dagster` (explicit path) — pyenv shims can shadow the venv's `dagster` even when the venv is active.
+
+---
 
 ## Project Structure
 
 ```
-ingestion/          # Supabase → Snowflake Python scripts (ingest, seed_data, db)
-transform/          # dbt project
+ingestion/              # Python: Supabase → Snowflake (ingest, seed_data, db)
+transform/              # dbt project root
   models/
-    staging/        # stg_* — clean types, snake_case, no business logic
-    intermediate/   # int_* — reusable joins/derivations shared across marts
-    marts/          # dim_*, fct_*, mart_* — business logic
-orchestration/      # Dagster code location (assets, daily_pipeline job, schedule)
-agent/              # LangGraph AI analyst
-eval/               # 20-question eval set + scoring script
-snowflake/          # setup.sql / teardown.sql — warehouse, DB, schemas, RBAC
+    staging/            # stg_* — typed, renamed, no business logic
+    intermediate/       # int_* — reusable joins shared across marts
+    marts/              # dim_*, fct_*, mart_* — business logic, materialized as tables
+    metrics/            # MetricFlow semantic models + metric definitions
+  seeds/                # plan_pricing.csv — real prices from the landing page
+  macros/               # generate_schema_name + reusable Jinja
+orchestration/          # Dagster: assets, daily_pipeline job, 11:00 IST schedule
+snowflake/              # setup.sql / teardown.sql — warehouse, DB, schemas, RBAC
+assets/                 # screenshots and diagrams
+my docs/                # ISSUES_LOG.md — 11 bugs documented with root cause + fix
 ```
+
+---
+
+## Related
+
+- **OneOnOne (the product):** [github.com/whysokara/oneonone](https://github.com/whysokara/oneonone) — the Next.js SaaS this pipeline runs on top of
+- **ISSUES_LOG:** [`my docs/ISSUES_LOG.md`](my%20docs/ISSUES_LOG.md) — 11 real bugs found and fixed during this build, each with root cause and lesson learned
