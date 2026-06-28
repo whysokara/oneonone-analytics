@@ -9,7 +9,7 @@ models:
       tags: ['dim', 'users']
     columns:
       - name: manager_id
-        description: Primary key — the manager's user_id.
+        description: Primary key, the manager's user_id.
         tests:
           - unique
           - not_null
@@ -49,7 +49,7 @@ models:
       tags: ['dim', 'boards']
     columns:
       - name: board_id
-        description: Primary key — the board id.
+        description: Primary key, the board id.
         tests: [unique, not_null]
       - name: manager_id
         description: The board's manager.
@@ -75,12 +75,12 @@ models:
                 values: [free, pro, pro_plus]
 
   - name: fct_entries
-    description: One row per entry — business-facing fact with self-entry and first-entry flags.
+    description: One row per entry. Business-facing fact with self-entry and first-entry flags.
     config:
       tags: ['fct', 'entries']
     columns:
       - name: entry_id
-        description: Primary key — the entry id.
+        description: Primary key, the entry id.
         tests: [unique, not_null]
       - name: board_id
         description: Board the entry belongs to.
@@ -126,7 +126,7 @@ models:
       tags: ['fct', 'subscriptions', 'revenue']
     columns:
       - name: subscription_id
-        description: Primary key — the subscription record id.
+        description: Primary key, the subscription record id.
         tests: [unique, not_null]
       - name: user_id
         description: Subscriber (the manager paying).
@@ -167,7 +167,7 @@ models:
       tags: ['mart', 'health']
     columns:
       - name: manager_id
-        description: Primary key — the manager.
+        description: Primary key, the manager.
         tests:
           - unique
           - not_null

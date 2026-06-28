@@ -12,7 +12,7 @@ seeds:
       Normalized monthly MRR for annual subs is annual_price / 12.
     columns:
       - name: plan
-        description: Plan identifier — matches subscriptions.plan.
+        description: Plan identifier, matches subscriptions.plan.
         tests:
           - unique
           - not_null

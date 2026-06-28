@@ -38,7 +38,7 @@ semantic_models:
         expr: manager_id
         agg_time_dimension: signup_date
 
-      # CASE in expr avoids Jinja templating — safe for dbt to parse.
+      # CASE in expr avoids Jinja templating (safe for dbt to parse).
       # dim_managers is one row per manager so sum(case...) = count of matching managers.
       - name: activated_manager_count
         description: "Count of managers who have activated (≥1 team published entry)."
@@ -59,7 +59,7 @@ semantic_models:
         agg_time_dimension: signup_date
 
 metrics:
-  # ── Simple metrics (base layer — directly aggregate one measure) ──────────
+  # Simple metrics (base layer): directly aggregate one measure
 
   - name: total_managers
     label: Total Managers
@@ -80,12 +80,12 @@ metrics:
 
   - name: active_managers
     label: Active Managers
-    description: "Managers who have activated — at least one team member has a published entry."
+    description: "Managers who have activated: at least one team member has a published entry."
     type: simple
     type_params:
       measure: activated_manager_count
 
-  # Helper metric — used as the numerator in conversion_rate ratio below.
+  # Helper metric: numerator for conversion_rate ratio.
   - name: paying_managers
     label: Paying Managers
     description: "Count of managers on an active paid plan. Numerator for conversion_rate."
@@ -93,7 +93,7 @@ metrics:
     type_params:
       measure: paying_manager_count
 
-  # Helper metric — used as the numerator in avg_team_size derived metric below.
+  # Helper metric: numerator for avg_team_size derived metric.
   - name: total_team_size_metric
     label: Total Team Size
     description: "Sum of team sizes across all managers. Numerator for avg_team_size."
@@ -101,7 +101,7 @@ metrics:
     type_params:
       measure: total_team_size
 
-  # ── Derived / Ratio metrics (reference the simple metrics above) ──────────
+  # Derived / Ratio metrics: reference the simple metrics above
 
   - name: avg_team_size
     label: Average Team Size

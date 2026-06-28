@@ -54,14 +54,14 @@ semantic_models:
         expr: "case when is_self_entry = false and status = 'published' then 1 else 0 end"
         agg_time_dimension: entry_date
 
-      # Count of first published entries per employee — activation signal
+      # Count of first published entries per employee (activation signal)
       - name: first_entry_count
         description: "Count of employees who logged their first ever published entry."
         agg: sum
         expr: "case when is_first_entry = true and status = 'published' then 1 else 0 end"
         agg_time_dimension: entry_date
 
-      # Total entries including self-entries — volume metric
+      # Total entries including self-entries (volume metric)
       - name: total_entry_count
         description: "Total entries including self-entries."
         agg: count_distinct
@@ -85,7 +85,7 @@ metrics:
 
   - name: feature_adoption
     label: Feature Adoption
-    description: "Count of employees who have logged their first published entry — measures how many individuals have adopted the product."
+    description: "Count of employees who have logged their first published entry."
     type: simple
     type_params:
       measure: first_entry_count
@@ -106,7 +106,7 @@ metrics:
   # Proxied here as published_entries / total_managers (directional signal, not exact rate).
   - name: team_adoption_rate
     label: Team Adoption Rate
-    description: "Published team entries per manager — a directional adoption signal."
+    description: "Published team entries per manager; directional adoption signal."
     type: derived
     type_params:
       expr: "published_entries / total_managers"

@@ -11,7 +11,7 @@ models:
       tags: ['entries']
     columns:
       - name: entry_id
-        description: Primary key — one row per entry.
+        description: Primary key, one row per entry.
         tests: [unique, not_null]
       - name: is_self_entry
         tests: [not_null]
@@ -26,21 +26,21 @@ models:
       tags: ['boards']
     columns:
       - name: board_id
-        description: Primary key — one row per board.
+        description: Primary key, one row per board.
         tests: [unique, not_null]
       - name: team_size
         tests: [not_null]
 
   - name: int_subscriptions_current
     description: >
-      One row per user — their current subscription (active preferred, else most recent),
+      One row per user with their current subscription (active preferred, else most recent),
       with current_plan, is_active, is_paying, and mrr_amount (active & non-complimentary &
       paid plan only). Reused by dim_managers, dim_teams, mart_manager_health.
     config:
       tags: ['subscriptions', 'revenue']
     columns:
       - name: user_id
-        description: Primary key — one row per user.
+        description: Primary key, one row per user.
         tests: [unique, not_null]
       - name: is_paying
         tests: [not_null]

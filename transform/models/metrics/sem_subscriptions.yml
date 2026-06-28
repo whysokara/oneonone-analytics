@@ -76,7 +76,7 @@ metrics:
   # churn_rate = churn events / new subscriptions (cohort proxy, not exact retention rate)
   - name: churn_rate
     label: Churn Rate
-    description: "Ratio of churn events to new subscriptions — a directional churn signal."
+    description: "Ratio of churn events to new subscriptions; directional churn signal."
     type: ratio
     type_params:
       numerator:
