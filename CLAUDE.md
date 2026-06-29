@@ -97,6 +97,7 @@ dbt run --select marts.*                     # marts only
 dbt test                                     # run all tests
 dbt build                                    # run + test together
 dbt build --select stg_entries               # single model
+dbt snapshot                                 # update SCD Type 2 snapshots (run after dbt build)
 
 # MetricFlow
 # IMPORTANT: always prefix mf commands with DBT_PROFILES_DIR=~/.dbt
