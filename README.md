@@ -10,7 +10,7 @@ Built on top of [OneOnOne](https://github.com/whysokara/oneonone), a shared work
 ![Dagster](https://img.shields.io/badge/Dagster-1.12-654FF0?style=flat&logo=dagster&logoColor=white)
 ![MetricFlow](https://img.shields.io/badge/MetricFlow-0.13-3DDC84?style=flat)
 
-**9 source tables · 17 dbt models · 80+ tests · 16 MetricFlow metrics · $85.83 live MRR · daily Dagster pipeline**
+**9 source tables · 17 dbt models · 80+ tests · 16 MetricFlow metrics · $85.83 live MRR · daily Dagster pipeline · CI/CD on every PR**
 
 ---
 
@@ -55,6 +55,8 @@ Model-level DAG from source tables through staging, intermediate, and marts, gen
 | dbt marts | ✅ Shipped | 5 tables, 80+ tests, `plan_pricing` seed |
 | MetricFlow semantic layer | ✅ Shipped | 3 semantic models, 16 metrics, 4018-day time spine |
 | Dagster orchestration | ✅ Shipped | Asset graph, daily schedule, dbt tests as asset checks |
+| SCD Type 2 snapshot | ✅ Shipped | `scd_users` — full change history for user records |
+| CI/CD pipeline | ✅ Shipped | GitHub Actions: CI on PRs (dev), CD on merge (prod) |
 | LangGraph AI analyst | 🔜 Week 5 | 4 tools, per-manager scoping |
 | 20-question eval set | 🔜 Week 6 | Confidence handling, sanity checks |
 | In-app chat | 🔜 Week 7 | Next.js `/api/analyst`, manager-scoped answers |
@@ -68,7 +70,8 @@ Model-level DAG from source tables through staging, intermediate, and marts, gen
 | Source | Supabase (PostgreSQL) | Live production data, 9 tables, service-role auth |
 | Ingestion | Python · `supabase-py` · `snowflake-connector` | Paginated reads, atomic Snowflake loads |
 | Orchestration | Dagster | Asset graph, lineage UI, daily cron at 11:00 IST |
-| Warehouse | Snowflake | RAW / STAGING / MARTS schemas, RBAC |
+| Warehouse | Snowflake | RAW / STAGING / MARTS / SNAPSHOTS schemas, RBAC |
+| CI/CD | GitHub Actions | dbt CI on every PR, dbt CD on merge to main |
 | Transformation | dbt Core | Staging, intermediate, marts, 80+ tests |
 | Semantic layer | MetricFlow | 3 semantic models, 16 business metrics |
 | AI Agent *(planned)* | LangGraph | 4 tools, answers scoped per manager |
@@ -172,7 +175,48 @@ Business logic built into the data layer. Each rule exists because I built OneOn
 
 **Snowflake RBAC validation:** `DEFAULT_SECONDARY_ROLES = ('ALL')` means `USE ROLE X` does not isolate one role's privileges. Used `USE SECONDARY ROLES NONE` to verify the LOADER/TRANSFORMER grants were correct.
 
+**Environment isolation via schema prefix:** the `generate_schema_name` macro checks `target.name` at build time. `prod` gets canonical schema names (`STAGING`, `MARTS`); every other target gets a prefix (`DEV_STAGING`, `DEV_MARTS`). A broken PR model can never overwrite production tables. No separate databases or Snowflake accounts needed.
+
 **Dagster asset checks:** dbt tests surface as asset checks in Dagster. A failing `unique` test on `fct_entries` shows in the lineage view next to the mart it guards.
+
+---
+
+## CI/CD and Environments
+
+### How environments work
+
+Every dbt target writes to a different set of Snowflake schemas. The `generate_schema_name` macro prefixes non-prod targets with the target name:
+
+| Target | Schemas written to | When it runs |
+|---|---|---|
+| `dev` | `DEV_STAGING`, `DEV_INTERMEDIATE`, `DEV_MARTS` | PR opened / updated |
+| `prod` | `STAGING`, `INTERMEDIATE`, `MARTS` | Merge to `main` |
+
+Dev is fully isolated — a broken model in a PR never touches production data.
+
+### GitHub Actions workflows
+
+```
+PR opened → ci.yml → dbt build --target dev   → writes to DEV_* schemas (isolated)
+                    → all 80+ tests must pass  → green checkmark on PR
+
+PR merged → cd.yml → dbt build --target prod  → writes to STAGING / MARTS (production)
+```
+
+Both workflows live in `.github/workflows/`. They read Snowflake credentials from three GitHub repository secrets: `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`.
+
+### Making a change (the loop)
+
+```bash
+git checkout -b feat/your-change
+# edit models / tests / snapshots
+export $(grep -v '^#' .env | grep SNOWFLAKE | xargs)
+cd transform && dbt build --target dev     # test locally in DEV_* schemas
+git push -u origin feat/your-change
+# open PR → CI runs automatically → merge → CD deploys to prod
+```
+
+Never run `dbt build --target prod` manually — the CD workflow is the only thing that should touch production.
 
 ---
 
@@ -233,10 +277,16 @@ transform/              # dbt project root
     intermediate/       # int_* -- reusable joins shared across marts
     marts/              # dim_*, fct_*, mart_* -- business logic, materialized as tables
     metrics/            # MetricFlow semantic models + metric definitions
+  snapshots/            # scd_users -- SCD Type 2 history of user record changes
   seeds/                # plan_pricing.csv -- real prices from the landing page
-  macros/               # generate_schema_name + reusable Jinja
+  macros/               # generate_schema_name (env-aware prefix) + reusable Jinja
 orchestration/          # Dagster: assets, daily_pipeline job, 11:00 IST schedule
 snowflake/              # setup.sql / teardown.sql -- warehouse, DB, schemas, RBAC
+.github/
+  workflows/
+    ci.yml              # dbt build --target dev on every PR
+    cd.yml              # dbt build --target prod on merge to main
+  profiles.yml          # CI-safe dbt profiles (env_var only, no credentials)
 assets/                 # screenshots and diagrams
 my docs/                # ISSUES_LOG.md -- 11 bugs documented with root cause + fix
 ```
