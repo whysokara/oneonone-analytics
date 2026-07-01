@@ -20,7 +20,7 @@ select
     , role
     , org_name
     , job_title
-    , linkedin_url
+    , linkedin_profile_url
     , birthday
     , created_at
     , updated_at
