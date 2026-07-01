@@ -369,7 +369,7 @@ def gen_subscriptions(managers):
         # current_period_end: future for active, past for lapsed, null for complimentary
         if status == "active":
             period_end = (now_utc() + timedelta(days=random.randint(5, 365))).isoformat()
-        elif status in ("canceled", "past_due", "expired"):
+        elif status in ("canceled", "past_due"):
             period_end = (now_utc() - timedelta(days=random.randint(1, 90))).isoformat()
         else:
             period_end = None

@@ -1,6 +1,7 @@
 name: 'oneonone'
 version: '1.0.0'
 profile: 'transform'
+require-dbt-version: [">=1.9.0", "<2.0.0"]
 
 model-paths: ["models"]
 analysis-paths: ["analyses"]

@@ -26,6 +26,20 @@ models:
     columns:
       - name: membership_id
         tests: [unique, not_null]
+      - name: board_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_boards')
+                field: board_id
+      - name: user_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_users')
+                field: user_id
 
   - name: stg_entries
     config:
@@ -33,6 +47,13 @@ models:
     columns:
       - name: entry_id
         tests: [unique, not_null]
+      - name: board_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_boards')
+                field: board_id
       - name: visibility
         tests:
           - accepted_values:
@@ -45,6 +66,13 @@ models:
     columns:
       - name: announcement_id
         tests: [unique, not_null]
+      - name: board_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_boards')
+                field: board_id
 
   - name: stg_announcement_reactions
     config:
@@ -64,6 +92,13 @@ models:
     columns:
       - name: subscription_id
         tests: [unique, not_null]
+      - name: user_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_users')
+                field: user_id
       - name: plan
         tests:
           - accepted_values:

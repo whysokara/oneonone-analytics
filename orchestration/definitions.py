@@ -40,7 +40,11 @@ def seed_supabase(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     import seed_data
 
     context.log.info("Seeding Supabase (append mode). Per-table counts below.")
-    seed_data.run()  # prints per-table +counts; Dagster captures stdout into the run logs
+    try:
+        seed_data.run()  # prints per-table +counts; Dagster captures stdout into the run logs
+    except Exception as e:
+        context.log.error(f"Seeding failed: {e}")
+        raise
 
     return dg.MaterializeResult(
         metadata={

@@ -19,6 +19,7 @@ team_members as (
     inner join boards
         on memberships.board_id = boards.board_id
     where memberships.user_id != boards.manager_id
+        and boards.manager_id is not null
 ),
 
 final as (

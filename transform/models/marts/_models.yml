@@ -130,7 +130,12 @@ models:
         tests: [unique, not_null]
       - name: user_id
         description: Subscriber (the manager paying).
-        tests: [not_null]
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_users')
+                field: user_id
       - name: plan
         description: Plan on this subscription record.
         tests:

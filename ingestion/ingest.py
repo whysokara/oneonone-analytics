@@ -93,6 +93,7 @@ def run():
             load_table(snowflake_conn, table, df)
         except Exception as e:
             print(f"[ingest] ERROR on {table}: {e}")
+            raise
 
     snowflake_conn.close()
     print("[ingest] Done.")
