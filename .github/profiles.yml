@@ -1,0 +1,27 @@
+# dbt profiles for CI/CD — safe to commit, contains no credentials.
+# Secrets are injected as environment variables by GitHub Actions at runtime.
+# Local dev: export SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD from .env first.
+
+transform:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: ONEONONE_TRANSFORMER
+      database: ONEONONE_DB
+      schema: dev_staging
+      warehouse: ONEONONE_WH
+      threads: 1
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: ONEONONE_TRANSFORMER
+      database: ONEONONE_DB
+      schema: staging
+      warehouse: ONEONONE_WH
+      threads: 4

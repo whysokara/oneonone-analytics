@@ -123,6 +123,10 @@ GRANT SELECT ON ALL TABLES    IN SCHEMA ONEONONE_DB.RAW TO ROLE ONEONONE_TRANSFO
 -- objects that don't exist yet. This is the #1 thing people forget.
 GRANT SELECT ON FUTURE TABLES IN SCHEMA ONEONONE_DB.RAW TO ROLE ONEONONE_TRANSFORMER;
 
+-- dbt needs CREATE SCHEMA so it can auto-create env-prefixed schemas (e.g. DEV_STAGING)
+-- on first run for non-prod targets. Without this, the first `dbt build --target dev` fails.
+GRANT CREATE SCHEMA ON DATABASE ONEONONE_DB TO ROLE ONEONONE_TRANSFORMER;
+
 -- dbt needs to create both views (staging/intermediate) and tables (marts) here.
 GRANT USAGE, CREATE TABLE, CREATE VIEW
     ON SCHEMA ONEONONE_DB.STAGING      TO ROLE ONEONONE_TRANSFORMER;
